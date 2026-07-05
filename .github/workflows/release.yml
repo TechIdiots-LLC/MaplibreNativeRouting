@@ -138,22 +138,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Get NuGet publishing token (Trusted Publishing / OIDC)
-        id: nuget-token
-        run: |
-          OIDC_RESPONSE=$(curl -fsS \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api.nuget.org")
-          OIDC_TOKEN=$(echo "$OIDC_RESPONSE" | jq -r '.value')
-
-          NUGET_RESPONSE=$(curl -fsS -X POST \
-            "https://api.nuget.org/v1/client-credentials/token" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -d "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer&client_assertion=${OIDC_TOKEN}&scope=api.nuget.org")
-          NUGET_TOKEN=$(echo "$NUGET_RESPONSE" | jq -r '.access_token')
-
-          echo "::add-mask::$NUGET_TOKEN"
-          echo "token=$NUGET_TOKEN" >> "$GITHUB_OUTPUT"
+      - name: NuGet login (Trusted Publishing / OIDC)
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_USER }}
 
       - name: Push NuGet packages to NuGet.org
         run: |
@@ -161,7 +150,7 @@ jobs:
           for pkg in artifacts/*.nupkg; do
             echo "Pushing $pkg..."
             if dotnet nuget push "$pkg" \
-              --api-key "${{ steps.nuget-token.outputs.token }}" \
+              --api-key "${{ steps.nuget-login.outputs.NUGET_API_KEY }}" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate; then
               echo "✓ Successfully pushed or already exists: $(basename $pkg)"

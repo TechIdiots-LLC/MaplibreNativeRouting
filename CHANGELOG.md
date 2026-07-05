@@ -7,6 +7,11 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.2
+### ✨ Features and improvements
+
+### 🐞 Bug fixes
+
 ## 0.0.1
 ### ✨ Features and improvements
 - Initial release: `MaplibreNative.Routing.Core` — platform-agnostic routing models, Valhalla router, A\* track-graph router, hybrid router, turn-by-turn navigation tracker, and maneuver announcer

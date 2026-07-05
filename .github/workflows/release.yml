@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -137,13 +138,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Get NuGet publishing token (Trusted Publishing / OIDC)
+        id: nuget-token
+        run: |
+          OIDC_TOKEN=$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api.nuget.org" \
+            | jq -r '.value')
+          NUGET_TOKEN=$(curl -sS -X POST \
+            "https://api.nuget.org/v1/client-credentials/token" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer&client_assertion=${OIDC_TOKEN}&scope=api.nuget.org" \
+            | jq -r '.access_token')
+          echo "::add-mask::$NUGET_TOKEN"
+          echo "token=$NUGET_TOKEN" >> "$GITHUB_OUTPUT"
+
       - name: Push NuGet packages to NuGet.org
         run: |
           EXIT_CODE=0
           for pkg in artifacts/*.nupkg; do
             echo "Pushing $pkg..."
             if dotnet nuget push "$pkg" \
-              --api-key "${{ secrets.NUGET_API_KEY }}" \
+              --api-key "${{ steps.nuget-token.outputs.token }}" \
               --source https://api.nuget.org/v3/index.json \
               --skip-duplicate; then
               echo "✓ Successfully pushed or already exists: $(basename $pkg)"

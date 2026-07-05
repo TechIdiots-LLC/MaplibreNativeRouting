@@ -1,0 +1,24 @@
+<Project>
+
+  <!--
+    Shared NuGet metadata applied to every packable project in this repo.
+    Individual .csproj files set <PackageId> and project-specific properties.
+  -->
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <Authors>TechIdiots LLC</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/TechIdiots-LLC/MaplibreNativeRouting</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md"
+          Pack="true"
+          PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)NOTICE.md"
+          Pack="true"
+          PackagePath="\" />
+  </ItemGroup>
+
+</Project>

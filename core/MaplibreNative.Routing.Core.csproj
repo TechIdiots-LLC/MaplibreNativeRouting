@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <RootNamespace>MaplibreNative.Routing.Core</RootNamespace>
+    <AssemblyName>MaplibreNative.Routing.Core</AssemblyName>
+    <PackageId>MaplibreNative.Routing.Core</PackageId>
+  </PropertyGroup>
+
+  <ItemGroup>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/core/">
+    <Project Path="core/MaplibreNative.Routing.Core.csproj" />
+  </Folder>
+  <Folder Name="/handlers/">
+    <Project Path="handlers/MaplibreNative.Routing.csproj" />
+  </Folder>
+  <Folder Name="/wpf/">
+    <Project Path="wpf/MaplibreNative.Routing.Wpf.csproj" />
+  </Folder>
+</Solution>

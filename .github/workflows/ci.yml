@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Read version ──────────────────────────────────────────────────────────
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read VERSION
+        id: read
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+  # ── Build & pack (Windows required for MAUI WinUI target) ────────────────
+  build:
+    name: Build + Pack
+    runs-on: windows-latest
+    needs: version
+    outputs:
+      ci_ver: ${{ steps.ci_ver.outputs.ci_ver }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore MAUI workload
+        run: dotnet workload install maui
+
+      - name: Compute CI package version
+        id: ci_ver
+        shell: bash
+        run: |
+          BASE=${{ needs.version.outputs.version }}
+          MAJOR=$(echo "$BASE" | cut -d. -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f2)
+          PATCH=$(echo "$BASE" | cut -d. -f3 | cut -d- -f1)
+          CI_VER="${MAJOR}.${MINOR}.$((PATCH+1)).${{ github.run_number }}"
+          echo "CI_VER=$CI_VER" >> "$GITHUB_ENV"
+          echo "ci_ver=$CI_VER" >> "$GITHUB_OUTPUT"
+          echo "CI package version: $CI_VER"
+
+      - name: Build core
+        run: dotnet build core/MaplibreNative.Routing.Core.csproj -c Release
+
+      - name: Build handlers (Windows)
+        run: dotnet build handlers/MaplibreNative.Routing.csproj -c Release -f net10.0-windows10.0.19041.0
+
+      - name: Build handlers (Android)
+        run: dotnet build handlers/MaplibreNative.Routing.csproj -c Release -f net10.0-android36.0
+
+      - name: Build WPF
+        run: dotnet build wpf/MaplibreNative.Routing.Wpf.csproj -c Release
+
+      - name: Pack MaplibreNative.Routing.Core
+        run: |
+          dotnet pack core/MaplibreNative.Routing.Core.csproj `
+            -c Release `
+            -p:Version=${{ env.CI_VER }} `
+            -o artifacts/
+
+      - name: Pack MaplibreNative.Routing
+        run: |
+          dotnet pack handlers/MaplibreNative.Routing.csproj `
+            -c Release `
+            -p:Version=${{ env.CI_VER }} `
+            -o artifacts/
+
+      - name: Pack MaplibreNative.Routing.Wpf
+        run: |
+          dotnet pack wpf/MaplibreNative.Routing.Wpf.csproj `
+            -c Release `
+            -p:Version=${{ env.CI_VER }} `
+            -o artifacts/
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.nupkg
+          retention-days: 3

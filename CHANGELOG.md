@@ -9,8 +9,10 @@
 
 ## 0.0.9
 ### 🐞 Bug fixes
-- `SpatialGraph.Build` now uses differentiated merge radii: segment endpoints merge within 30 m (up from 15 m) to bridge typical GPS data gaps between adjacent trail segments; interior shape points use a 5 m radius for near-duplicate suppression only, avoiding false cross-connections between parallel trails
+- `SpatialGraph.Build` now performs a T-junction insertion pass before building the graph (ported from the `addMissingIntersectionPoints` pattern in geojson-path-finder): for each trail segment endpoint, the nearest point on every other trail segment's interior is found via perpendicular projection; if within 25 m, a new coordinate is inserted at that location, creating an explicit graph node at T-intersections; this fixes "no route found" on connected-looking trail networks where one trail's endpoint meets the middle of another trail rather than its endpoint
+- `SpatialGraph.Build` uses a bounding-box pre-filter to keep the junction-insertion pass efficient (O(F) per endpoint instead of O(F²))
 - `HybridRouter` now falls through to hybrid stitch (road bridge + trail A\*) when pure trail-only routing returns null due to a disconnected trail graph, instead of immediately returning "no route found"
+- Progress messages now show trail graph node/feature count and snap distances to aid diagnosis
 
 ## 0.0.8
 ### 🐞 Bug fixes

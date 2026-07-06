@@ -7,6 +7,15 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.5
+### ✨ Features and improvements
+- `ITileCacheProvider` interface — optionally share a tile cache between the routing plugin and the host app's map renderer; routing plugin reads from the shared cache before HTTP and writes back tiles it downloads
+- `RouteOptions.TileCacheProvider` — set to your `ITileCacheProvider` implementation to enable shared caching; null (default) preserves existing HTTP + in-memory behavior unchanged
+- `ITileCacheProvider.RequestAreaCacheAsync` — routing plugin fires a corridor pre-cache request when planning a route, allowing host apps to delegate to an offline download manager (e.g. `MbglOfflineManager.CreateRegionAsync`)
+- `TileCoord` is now public — host app implementations of `ITileCacheProvider` can use the same tile coordinate utilities (`FromLatLon`, `CoverBoundingBox`, etc.)
+
+### 🐞 Bug fixes
+
 ## 0.0.4
 ### ✨ Features and improvements
 - Pure C# offline MVT road routing — build a road graph directly from OpenMapTiles vector tiles, eliminating the Valhalla HTTP dependency for auto, bicycle, and pedestrian profiles (`OfflineAuto`, `OfflineBicycle`, `OfflinePedestrian`)

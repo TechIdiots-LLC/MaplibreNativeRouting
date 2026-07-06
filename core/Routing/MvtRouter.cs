@@ -11,6 +11,7 @@ public sealed class MvtRouter : IRoutingEngine
     private const int MaxRetries = 2;
 
     private static TileProvider? _tileProvider;
+    private static ITileCacheProvider? _currentCacheProvider;
     private static readonly SemaphoreSlim InitLock = new(1, 1);
 
     public async Task<DirectionsRoute?> RouteAsync(RouteOptions options)
@@ -19,7 +20,8 @@ public sealed class MvtRouter : IRoutingEngine
             throw new InvalidOperationException(
                 "MvtTileJsonUrl must be set on RouteOptions when using an offline or hybrid-offline profile.");
 
-        var provider = await GetOrCreateProviderAsync(options.MvtTileJsonUrl, options.CancellationToken)
+        var provider = await GetOrCreateProviderAsync(
+                options.MvtTileJsonUrl, options.TileCacheProvider, options.CancellationToken)
             .ConfigureAwait(false);
 
         var costing = new MvtCostingModel(options.Profile, options.UseHighways, options.UseFerry);
@@ -91,18 +93,21 @@ public sealed class MvtRouter : IRoutingEngine
     }
 
     private static async Task<TileProvider> GetOrCreateProviderAsync(
-        string tileJsonUrl, CancellationToken ct)
+        string tileJsonUrl, ITileCacheProvider? cacheProvider, CancellationToken ct)
     {
-        if (_tileProvider != null) return _tileProvider;
+        if (_tileProvider != null && ReferenceEquals(_currentCacheProvider, cacheProvider))
+            return _tileProvider;
 
         await InitLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_tileProvider != null) return _tileProvider;
+            if (_tileProvider != null && ReferenceEquals(_currentCacheProvider, cacheProvider))
+                return _tileProvider;
 
             string urlTemplate = await TileProvider.ResolveTileJsonAsync(tileJsonUrl, ct)
                 .ConfigureAwait(false);
-            _tileProvider = new TileProvider(urlTemplate);
+            _tileProvider = new TileProvider(urlTemplate, cacheProvider: cacheProvider);
+            _currentCacheProvider = cacheProvider;
             return _tileProvider;
         }
         finally

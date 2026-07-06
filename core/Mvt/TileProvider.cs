@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using MaplibreNative.Routing.Core.Utils;
 
@@ -13,15 +14,18 @@ internal sealed class TileProvider : IDisposable
 
     private readonly string _urlTemplate;
     private readonly int _maxCacheSize;
+    private readonly ITileCacheProvider? _cacheProvider;
 
     private readonly ConcurrentDictionary<TileCoord, byte[]> _cache = new();
     private readonly ConcurrentDictionary<TileCoord, Task<byte[]?>> _inflight = new();
     private readonly ConcurrentQueue<TileCoord> _accessOrder = new();
 
-    public TileProvider(string urlTemplate, int maxCacheSize = DefaultMaxCacheSize)
+    public TileProvider(string urlTemplate, int maxCacheSize = DefaultMaxCacheSize,
+        ITileCacheProvider? cacheProvider = null)
     {
         _urlTemplate = urlTemplate;
         _maxCacheSize = maxCacheSize;
+        _cacheProvider = cacheProvider;
     }
 
     public static async Task<string> ResolveTileJsonAsync(string tileJsonUrl, CancellationToken ct = default)
@@ -37,10 +41,29 @@ internal sealed class TileProvider : IDisposable
 
     public async Task<byte[]?> GetTileDataAsync(TileCoord coord, CancellationToken ct = default)
     {
-        if (_cache.TryGetValue(coord, out var cached))
+        if (_cacheProvider is not null)
+        {
+            try
+            {
+                var cached = await _cacheProvider.GetTileAsync(coord, ct).ConfigureAwait(false);
+                if (cached is not null)
+                {
+                    _cache[coord] = cached;
+                    _accessOrder.Enqueue(coord);
+                    Prune();
+                    return cached;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                Debug.WriteLine($"[TileProvider] Cache read failed for {coord}: {ex.Message}");
+            }
+        }
+
+        if (_cache.TryGetValue(coord, out var memoryCached))
         {
             _accessOrder.Enqueue(coord);
-            return cached;
+            return memoryCached;
         }
 
         var task = _inflight.GetOrAdd(coord, c => DownloadTileAsync(c, ct));
@@ -67,6 +90,11 @@ internal sealed class TileProvider : IDisposable
         double maxLat = Math.Max(originLat, destLat) + expansionDeg;
         double minLon = Math.Min(originLon, destLon) - expansionDeg;
         double maxLon = Math.Max(originLon, destLon) + expansionDeg;
+
+        if (_cacheProvider is not null)
+        {
+            _ = _cacheProvider.RequestAreaCacheAsync(minLat, minLon, maxLat, maxLon, zoom, ct);
+        }
 
         var tileCoords = TileCoord.CoverBoundingBox(minLat, minLon, maxLat, maxLon, zoom);
 
@@ -102,6 +130,12 @@ internal sealed class TileProvider : IDisposable
             _cache[coord] = data;
             _accessOrder.Enqueue(coord);
             Prune();
+
+            if (_cacheProvider is not null)
+            {
+                _ = _cacheProvider.SetTileAsync(coord, data, CancellationToken.None);
+            }
+
             return data;
         }
         catch (HttpRequestException)

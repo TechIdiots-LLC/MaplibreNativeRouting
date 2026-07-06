@@ -1,3 +1,5 @@
+using MaplibreNative.Routing.Core.Mvt;
+
 namespace MaplibreNative.Routing.Core.Models;
 
 /// <summary>Input to any IRoutingEngine. Callers fill in the required fields;
@@ -15,6 +17,11 @@ public record RouteOptions
     /// <summary>TileJSON endpoint or direct tile URL template for MVT tile source.
     /// Required when using Offline or HybridOffline profiles.</summary>
     public string? MvtTileJsonUrl { get; init; }
+
+    /// <summary>Optional shared tile cache provider. When set, TileProvider checks
+    /// this cache before HTTP and writes back after download. Pass null (default)
+    /// to use HTTP + in-memory caching only.</summary>
+    public ITileCacheProvider? TileCacheProvider { get; init; }
 
     /// <summary>Strongly avoid highways (0 = impossible, 1 = neutral).
     /// Applied to all Valhalla costing calls.</summary>

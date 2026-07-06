@@ -1,6 +1,6 @@
 namespace MaplibreNative.Routing.Core.Mvt;
 
-internal readonly record struct TileCoord(int Z, int X, int Y)
+public readonly record struct TileCoord(int Z, int X, int Y)
 {
     public static TileCoord FromLatLon(double lat, double lon, int zoom)
     {

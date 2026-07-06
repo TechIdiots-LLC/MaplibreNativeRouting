@@ -12,6 +12,10 @@ public record RouteOptions
     public string ValhallaUrl { get; init; } =
         "https://valhalla1.openstreetmap.de/route";
 
+    /// <summary>TileJSON endpoint or direct tile URL template for MVT tile source.
+    /// Required when using Offline or HybridOffline profiles.</summary>
+    public string? MvtTileJsonUrl { get; init; }
+
     /// <summary>Strongly avoid highways (0 = impossible, 1 = neutral).
     /// Applied to all Valhalla costing calls.</summary>
     public double UseHighways { get; init; } = 0.1;

@@ -58,6 +58,26 @@ public static class RouteUtils
         return R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
     }
 
+    public static double InitialBearing(double lat1, double lon1, double lat2, double lon2)
+    {
+        double dLon = (lon2 - lon1) * Math.PI / 180;
+        double lat1R = lat1 * Math.PI / 180;
+        double lat2R = lat2 * Math.PI / 180;
+        double y = Math.Sin(dLon) * Math.Cos(lat2R);
+        double x = Math.Cos(lat1R) * Math.Sin(lat2R) -
+                   Math.Sin(lat1R) * Math.Cos(lat2R) * Math.Cos(dLon);
+        double bearing = Math.Atan2(y, x) * 180 / Math.PI;
+        return (bearing + 360) % 360;
+    }
+
+    public static double TurnAngle(double prevBearing, double nextBearing)
+    {
+        double diff = nextBearing - prevBearing;
+        if (diff > 180) diff -= 360;
+        if (diff < -180) diff += 360;
+        return diff;
+    }
+
     /// <summary>Returns the index of the shape coordinate closest to the given point.</summary>
     public static int SnapToShape(
         double lat, double lon,

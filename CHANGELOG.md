@@ -7,15 +7,33 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
-## 0.0.3
+## 0.0.4
 ### ✨ Features and improvements
+- Pure C# offline MVT road routing — build a road graph directly from OpenMapTiles vector tiles, eliminating the Valhalla HTTP dependency for auto, bicycle, and pedestrian profiles (`OfflineAuto`, `OfflineBicycle`, `OfflinePedestrian`)
+- Minimal protobuf reader and MVT decoder for parsing PBF tiles without external dependencies
+- Tile fetching with LRU cache and request coalescing (pattern inspired by maplibre-contour)
+- Bidirectional A\* pathfinding on directed road graph with profile-specific costing (speed tables, highway/ferry/toll/surface penalties)
+- Turn-by-turn maneuver generation from MVT edge paths with street name merging and bearing-based turn classification
+- Hybrid offline routing (`HybridOfflineMotorcycle`, `HybridOfflineBicycle`) — GeoJSON trail-primary routing with MVT road gap-fill via `HybridRouter`
+- `HybridRouter` now accepts an injectable `IRoutingEngine` for the road segment, enabling use of `MvtRouter` instead of Valhalla
+- `MvtTileJsonUrl` on `RouteOptions` — user-configurable MVT tile source (no hardcoded default)
 
 ### 🐞 Bug fixes
+
+## 0.0.3
+### ✨ Features and improvements
+- Switched NuGet Trusted Publishing from manual OIDC curl flow to `NuGet/login@v1` action for more reliable publishing
+
+### 🐞 Bug fixes
+- Fixed NuGet OIDC token exchange failing with HTTP 405 due to manual curl-based flow
 
 ## 0.0.2
 ### ✨ Features and improvements
+- Added OIDC Trusted Publishing support for NuGet releases (no more API key secrets)
+- Added `id-token: write` permission to release workflow for OIDC token exchange
 
 ### 🐞 Bug fixes
+- Removed hardcoded local NuGet source (`C:\Users\...\local-nuget`) from `nuget.config` that caused CI build failures
 
 ## 0.0.1
 ### ✨ Features and improvements

@@ -60,6 +60,7 @@ public class NavigationSession : IAsyncDisposable
         // to process IProgress<string> callbacks while routing is in progress.
         DirectionsRoute? route;
         try { route = await Task.Run(() => engine.RouteAsync(optionsWithTracks)); }
+        catch (OperationCanceledException) { throw; }  // let caller show timeout message
         catch (Exception ex)
         {
             Debug.WriteLine($"[NavigationSession] Route failed: {ex}");

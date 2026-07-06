@@ -76,18 +76,22 @@ public class HybridRouter : IRoutingEngine
             ? BuildTrailRoute(trailPath, options.Profile)
             : null;
 
-        // Both ends snap to the trail network and A* found a path → done.
-        if (originSnap <= SnapThresholdM && destSnap <= SnapThresholdM && trailSegment is not null)
+        // Trail A* found a path → return it directly, regardless of snap distances.
+        // The route may start/end a short distance from the pins (at the nearest trail node),
+        // which is acceptable. Don't discard a valid trail route just because an endpoint is
+        // slightly outside the snap threshold — the hybrid road stitch for those extra meters
+        // fails anyway when the trail node is forest-only with no road access in the MVT data.
+        if (trailSegment is not null)
         {
-            progress?.Report("Trail route found.");
+            progress?.Report($"Trail route found ({trailSegment.Distance / 1000.0:F1} km).");
             return trailSegment;
         }
 
-        if (trailSegment is null)
-            progress?.Report("Trail A* found no path — network may be disconnected between these locations");
+        progress?.Report("Trail A* found no path — network may be disconnected between these locations");
 
-        // Hybrid stitch: road-to-trail (when origin is far from trail), trail segment
-        // (already computed above), trail-to-road (when dest is far from trail).
+        // Trail A* failed. Hybrid stitch: road-to-trail (when origin is far from trail),
+        // then road-to-destination (when dest is far from trail). The trail segment itself
+        // is skipped here because it uses the same graph and would fail identically.
         var entryPoint = (originNode.Lat, originNode.Lon);
         var exitPoint  = (destNode.Lat, destNode.Lon);
 

@@ -7,6 +7,11 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.11
+### 🐞 Bug fixes
+- `HybridRouter` now returns the trail route immediately when trail A\* succeeds, regardless of snap distances; previously a pin placed >200 m from the trail (e.g. on a nearby road) would discard a valid trail path and fall through to a hybrid road stitch that always failed because the trail exit node is in the forest with no road access in the MVT graph
+- `NavigationSession.StartAsync` now re-throws `OperationCanceledException` instead of swallowing it; previously a routing timeout caused `StartAsync` to return `null` (showing "No route found") rather than propagating the cancellation so `MapViewModel` could show the proper "Route timed out" message
+
 ## 0.0.10
 ### 🐞 Bug fixes
 - `SpatialGraph.Build` increases `JunctionSnapM` from 25 m to 75 m — catches T-junctions at road crossings and slightly offset trail meets (e.g. two club networks with endpoints 30–70 m apart)

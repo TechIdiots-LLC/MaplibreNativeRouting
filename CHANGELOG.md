@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.8
+### 🐞 Bug fixes
+- `SpatialGraph.Build` now uses a spatial grid index (O(1) cell lookups) instead of a linear scan (O(N²)) when merging nearby nodes; with statewide trail packages containing hundreds of thousands of coordinates the old code would take minutes — with the grid it completes in under a second
+
 ## 0.0.7
 ### 🐞 Bug fixes
 - `NavigationSession.StartAsync` now runs the routing engine on a thread-pool thread via `Task.Run`, keeping the MAUI main thread free to process `IProgress<string>` callbacks in real time; previously the engine ran on the main thread, blocking the UI and preventing progress messages from appearing until routing completed

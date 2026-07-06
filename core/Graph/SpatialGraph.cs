@@ -12,6 +12,10 @@ public class SpatialGraph
 {
     private const double MergeRadiusM = 15;
 
+    // Cell size ~22 m at mid-latitudes. A 3×3 neighbourhood covers ±44 m,
+    // enough to catch all merge candidates without a full linear scan.
+    private const double CellDeg = 0.0002;
+
     public IReadOnlyList<GraphNode> Nodes { get; }
     public IReadOnlyDictionary<int, List<GraphEdge>> Adjacency { get; }
 
@@ -25,17 +29,35 @@ public class SpatialGraph
     {
         var nodes = new List<GraphNode>();
         var adj = new Dictionary<int, List<GraphEdge>>();
+        // Spatial hash: grid-cell → list of node IDs in that cell.
+        var grid = new Dictionary<(int, int), List<int>>();
+
+        static (int, int) CellOf(double lat, double lon) =>
+            ((int)Math.Floor(lat / CellDeg), (int)Math.Floor(lon / CellDeg));
 
         int GetOrCreateNode(double lat, double lon)
         {
-            for (int i = 0; i < nodes.Count; i++)
+            var (cl, cn) = CellOf(lat, lon);
+            // Search 3×3 neighbourhood of cells — O(1) instead of O(N).
+            for (int dl = -1; dl <= 1; dl++)
             {
-                if (RouteUtils.HaversineMeters(lat, lon, nodes[i].Lat, nodes[i].Lon) <= MergeRadiusM)
-                    return nodes[i].Id;
+                for (int dn = -1; dn <= 1; dn++)
+                {
+                    if (!grid.TryGetValue((cl + dl, cn + dn), out var bucket)) continue;
+                    foreach (int id in bucket)
+                    {
+                        if (RouteUtils.HaversineMeters(lat, lon, nodes[id].Lat, nodes[id].Lon) <= MergeRadiusM)
+                            return id;
+                    }
+                }
             }
             var node = new GraphNode(nodes.Count, lat, lon);
             nodes.Add(node);
             adj[node.Id] = new List<GraphEdge>();
+            var cell = CellOf(lat, lon);
+            if (!grid.TryGetValue(cell, out var newBucket))
+                grid[cell] = newBucket = new List<int>();
+            newBucket.Add(node.Id);
             return node.Id;
         }
 
@@ -54,7 +76,7 @@ public class SpatialGraph
             for (int i = 1; i < coords.Count; i++)
             {
                 int currId = GetOrCreateNode(coords[i].Lat, coords[i].Lon);
-                if (currId == prevId) { continue; }
+                if (currId == prevId) continue;
 
                 var distM = RouteUtils.HaversineMeters(
                     coords[i - 1].Lat, coords[i - 1].Lon,

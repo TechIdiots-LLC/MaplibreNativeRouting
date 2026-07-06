@@ -44,6 +44,7 @@ public class HybridRouter : IRoutingEngine
 
         progress?.Report("Building trail graph…");
         var graph = SpatialGraph.Build(options.TrackFeatures);
+        progress?.Report($"Trail graph: {graph.Nodes.Count:N0} nodes from {options.TrackFeatures.Count:N0} features");
         if (graph.Nodes.Count == 0)
         {
             progress?.Report("No trail graph — routing by road only…");
@@ -63,14 +64,21 @@ public class HybridRouter : IRoutingEngine
         double destSnap = RouteUtils.HaversineMeters(
             options.Destination.Lat, options.Destination.Lon, destNode.Lat, destNode.Lon);
 
-        // Both ends snap to the track network → pure trail route.
+        progress?.Report($"Origin {originSnap:F0} m from trail, dest {destSnap:F0} m from trail");
+
+        // Both ends snap to the track network → try pure trail route first.
         if (originSnap <= SnapThresholdM && destSnap <= SnapThresholdM)
         {
             progress?.Report("Routing on trail…");
-            return await _track.RouteAsync(options);
+            var trailOnly = await _track.RouteAsync(options);
+            if (trailOnly is not null)
+                return trailOnly;
+            // Trail A* returned null — graph is disconnected between these nodes.
+            // Fall through to hybrid stitch so road segments can bridge the gap.
+            progress?.Report("Trail path disconnected — trying hybrid route…");
         }
 
-        // Partial or no track coverage → hybrid stitch.
+        // Hybrid stitch: road to nearest trail entry, A* on trail, road to destination.
         var entryPoint = (originNode.Lat, originNode.Lon);
         var exitPoint = (destNode.Lat, destNode.Lon);
 

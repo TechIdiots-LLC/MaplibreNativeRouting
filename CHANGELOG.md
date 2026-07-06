@@ -7,6 +7,11 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.9
+### 🐞 Bug fixes
+- `SpatialGraph.Build` now uses differentiated merge radii: segment endpoints merge within 30 m (up from 15 m) to bridge typical GPS data gaps between adjacent trail segments; interior shape points use a 5 m radius for near-duplicate suppression only, avoiding false cross-connections between parallel trails
+- `HybridRouter` now falls through to hybrid stitch (road bridge + trail A\*) when pure trail-only routing returns null due to a disconnected trail graph, instead of immediately returning "no route found"
+
 ## 0.0.8
 ### 🐞 Bug fixes
 - `SpatialGraph.Build` now uses a spatial grid index (O(1) cell lookups) instead of a linear scan (O(N²)) when merging nearby nodes; with statewide trail packages containing hundreds of thousands of coordinates the old code would take minutes — with the grid it completes in under a second

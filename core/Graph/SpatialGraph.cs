@@ -5,15 +5,19 @@ namespace MaplibreNative.Routing.Core.Graph;
 
 /// <summary>
 /// Builds an undirected spatial graph from TrackFeature (LineString) coordinate arrays.
-/// Nodes within MergeRadiusM of each other are merged into a single node so that
-/// trail intersections and nearby endpoints connect correctly.
+/// Segment endpoints use a larger merge radius so that nearby trail segment ends connect
+/// into a single node; interior coordinates use a small radius for near-duplicate
+/// suppression only (avoids false cross-connections between parallel trails).
 /// </summary>
 public class SpatialGraph
 {
-    private const double MergeRadiusM = 15;
+    // Segment start/end points: merge within 30 m to bridge typical GPS data gaps.
+    private const double EndpointMergeM = 30;
+    // Interior shape points: deduplicate only (5 m); never merge across segments.
+    private const double InteriorMergeM = 5;
 
-    // Cell size ~22 m at mid-latitudes. A 3×3 neighbourhood covers ±44 m,
-    // enough to catch all merge candidates without a full linear scan.
+    // Grid cell ~22 m at mid-latitudes. 3×3 neighbourhood covers ±44 m,
+    // sufficient for the 30 m endpoint radius.
     private const double CellDeg = 0.0002;
 
     public IReadOnlyList<GraphNode> Nodes { get; }
@@ -29,16 +33,14 @@ public class SpatialGraph
     {
         var nodes = new List<GraphNode>();
         var adj = new Dictionary<int, List<GraphEdge>>();
-        // Spatial hash: grid-cell → list of node IDs in that cell.
         var grid = new Dictionary<(int, int), List<int>>();
 
         static (int, int) CellOf(double lat, double lon) =>
             ((int)Math.Floor(lat / CellDeg), (int)Math.Floor(lon / CellDeg));
 
-        int GetOrCreateNode(double lat, double lon)
+        int GetOrCreateNode(double lat, double lon, double mergeRadius)
         {
             var (cl, cn) = CellOf(lat, lon);
-            // Search 3×3 neighbourhood of cells — O(1) instead of O(N).
             for (int dl = -1; dl <= 1; dl++)
             {
                 for (int dn = -1; dn <= 1; dn++)
@@ -46,7 +48,7 @@ public class SpatialGraph
                     if (!grid.TryGetValue((cl + dl, cn + dn), out var bucket)) continue;
                     foreach (int id in bucket)
                     {
-                        if (RouteUtils.HaversineMeters(lat, lon, nodes[id].Lat, nodes[id].Lon) <= MergeRadiusM)
+                        if (RouteUtils.HaversineMeters(lat, lon, nodes[id].Lat, nodes[id].Lon) <= mergeRadius)
                             return id;
                     }
                 }
@@ -64,7 +66,7 @@ public class SpatialGraph
         void AddEdge(int from, int to, double distM, string? fid)
         {
             adj[from].Add(new GraphEdge(from, to, distM, fid));
-            adj[to].Add(new GraphEdge(to, from, distM, fid));   // undirected
+            adj[to].Add(new GraphEdge(to, from, distM, fid));
         }
 
         foreach (var feature in features)
@@ -72,10 +74,11 @@ public class SpatialGraph
             var coords = feature.Coordinates;
             if (coords.Count < 2) continue;
 
-            int prevId = GetOrCreateNode(coords[0].Lat, coords[0].Lon);
+            int prevId = GetOrCreateNode(coords[0].Lat, coords[0].Lon, EndpointMergeM);
             for (int i = 1; i < coords.Count; i++)
             {
-                int currId = GetOrCreateNode(coords[i].Lat, coords[i].Lon);
+                double mergeR = (i == coords.Count - 1) ? EndpointMergeM : InteriorMergeM;
+                int currId = GetOrCreateNode(coords[i].Lat, coords[i].Lon, mergeR);
                 if (currId == prevId) continue;
 
                 var distM = RouteUtils.HaversineMeters(

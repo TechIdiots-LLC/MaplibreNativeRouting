@@ -7,6 +7,15 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.10
+### 🐞 Bug fixes
+- `SpatialGraph.Build` increases `JunctionSnapM` from 25 m to 75 m — catches T-junctions at road crossings and slightly offset trail meets (e.g. two club networks with endpoints 30–70 m apart)
+- `SpatialGraph.Build` increases `EndpointMergeM` from 15 m to 50 m — bridges endpoint-to-endpoint gaps up to 50 m (typical road crossing width) so trail segments that share an endpoint only by GPS precision or road-crossing separation form a connected graph
+- `SpatialGraph` now exposes `EdgeCount` (total undirected edges in the graph) for diagnostics
+- `HybridRouter` refactored to build `SpatialGraph` once and run `AStarSolver` once on the pre-built graph, eliminating a redundant graph build and trail A\* run that `TrackGraphRouter` was triggering internally; progress diagnostic now includes edge count
+- `HybridRouter` road-to-trail and trail-to-road segments are now skipped when the origin/destination are already within `SnapThresholdM` of the trail — these road calls would target a trail node in the forest where no road exists in the MVT data, causing unnecessary tile downloads and guaranteed-null results
+- `HybridRouter` reports "Trail A\* found no path — network may be disconnected between these locations" when A\* fails, giving a clearer status message than a generic timeout
+
 ## 0.0.9
 ### 🐞 Bug fixes
 - `SpatialGraph.Build` now performs a T-junction insertion pass before building the graph (ported from the `addMissingIntersectionPoints` pattern in geojson-path-finder): for each trail segment endpoint, the nearest point on every other trail segment's interior is found via perpendicular projection; if within 25 m, a new coordinate is inserted at that location, creating an explicit graph node at T-intersections; this fixes "no route found" on connected-looking trail networks where one trail's endpoint meets the middle of another trail rather than its endpoint

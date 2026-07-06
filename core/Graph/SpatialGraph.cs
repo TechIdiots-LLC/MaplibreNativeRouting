@@ -18,22 +18,26 @@ public class SpatialGraph
 {
     // After junction insertion endpoints of different features are already snapped together,
     // so a small merge radius suffices for de-duplication.
-    private const double EndpointMergeM = 15;
+    // 50 m bridges typical road crossings (road width ~10-30 m) and club-boundary gaps.
+    private const double EndpointMergeM = 50;
     private const double InteriorMergeM = 5;
 
     // How far a trail endpoint can be from another trail's line to still insert a junction node.
-    private const double JunctionSnapM = 25;
+    // 75 m catches T-junctions at road crossings and slightly offset trail meets.
+    private const double JunctionSnapM = 75;
 
     // Grid cell ~22 m at mid-latitudes; 3×3 neighbourhood covers ±44 m.
     private const double CellDeg = 0.0002;
 
     public IReadOnlyList<GraphNode> Nodes { get; }
     public IReadOnlyDictionary<int, List<GraphEdge>> Adjacency { get; }
+    public int EdgeCount { get; }
 
     private SpatialGraph(List<GraphNode> nodes, Dictionary<int, List<GraphEdge>> adj)
     {
         Nodes = nodes;
         Adjacency = adj;
+        EdgeCount = adj.Values.Sum(list => list.Count) / 2;
     }
 
     public static SpatialGraph Build(IReadOnlyList<TrackFeature> features)

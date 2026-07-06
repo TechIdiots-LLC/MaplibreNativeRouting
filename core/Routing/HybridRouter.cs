@@ -5,16 +5,17 @@ using MaplibreNative.Routing.Core.Utils;
 namespace MaplibreNative.Routing.Core.Routing;
 
 /// <summary>
-/// Combines road routing with trail routing (TrackGraphRouter/A*).
+/// Combines road routing with trail routing (SpatialGraph A*).
 ///
 /// Flow:
-///   1. Build SpatialGraph from track features.
+///   1. Build SpatialGraph from track features (once).
 ///   2. Find nearest track nodes to origin and destination.
-///   3a. If both snap within SnapThresholdM → pure TrackGraphRouter.
-///   3b. Otherwise:
-///       - Road engine: origin → nearest track entry point
-///       - A*: track entry → track exit
-///       - Road engine: track exit → destination
+///   3. Run A* on the already-built graph (once).
+///   3a. If both snap within SnapThresholdM and A* succeeds → return pure trail route.
+///   3b. Otherwise attempt hybrid stitch:
+///       - Road engine: origin → nearest track entry point   (only when origin is far from trail)
+///       - Pre-computed A* result: entry → exit
+///       - Road engine: track exit → destination             (only when dest is far from trail)
 ///       - Stitch into a single DirectionsRoute.
 ///   4. Attach HighwayWarning if any road segment uses motorway/trunk.
 /// </summary>
@@ -23,7 +24,6 @@ public class HybridRouter : IRoutingEngine
     private const double SnapThresholdM = 200; // within 200 m → consider on-track
 
     private readonly IRoutingEngine _roadEngine;
-    private readonly TrackGraphRouter _track = new();
 
     public HybridRouter() : this(new ValhallaMtbRouter()) { }
 
@@ -44,7 +44,10 @@ public class HybridRouter : IRoutingEngine
 
         progress?.Report("Building trail graph…");
         var graph = SpatialGraph.Build(options.TrackFeatures);
-        progress?.Report($"Trail graph: {graph.Nodes.Count:N0} nodes from {options.TrackFeatures.Count:N0} features");
+        progress?.Report(
+            $"Trail graph: {graph.Nodes.Count:N0} nodes, {graph.EdgeCount:N0} edges" +
+            $" from {options.TrackFeatures.Count:N0} features");
+
         if (graph.Nodes.Count == 0)
         {
             progress?.Report("No trail graph — routing by road only…");
@@ -52,7 +55,7 @@ public class HybridRouter : IRoutingEngine
         }
 
         var originNode = graph.NearestNode(options.Origin.Lat, options.Origin.Lon);
-        var destNode = graph.NearestNode(options.Destination.Lat, options.Destination.Lon);
+        var destNode   = graph.NearestNode(options.Destination.Lat, options.Destination.Lon);
         if (originNode is null || destNode is null)
         {
             progress?.Report("Could not snap to trail — routing by road only…");
@@ -66,34 +69,41 @@ public class HybridRouter : IRoutingEngine
 
         progress?.Report($"Origin {originSnap:F0} m from trail, dest {destSnap:F0} m from trail");
 
-        // Both ends snap to the track network → try pure trail route first.
-        if (originSnap <= SnapThresholdM && destSnap <= SnapThresholdM)
+        // Run trail A* once on the already-built graph.
+        progress?.Report("Routing on trail…");
+        var trailPath    = AStarSolver.FindPath(graph, originNode, destNode);
+        var trailSegment = trailPath is { Count: >= 2 }
+            ? BuildTrailRoute(trailPath, options.Profile)
+            : null;
+
+        // Both ends snap to the trail network and A* found a path → done.
+        if (originSnap <= SnapThresholdM && destSnap <= SnapThresholdM && trailSegment is not null)
         {
-            progress?.Report("Routing on trail…");
-            var trailOnly = await _track.RouteAsync(options);
-            if (trailOnly is not null)
-                return trailOnly;
-            // Trail A* returned null — graph is disconnected between these nodes.
-            // Fall through to hybrid stitch so road segments can bridge the gap.
-            progress?.Report("Trail path disconnected — trying hybrid route…");
+            progress?.Report("Trail route found.");
+            return trailSegment;
         }
 
-        // Hybrid stitch: road to nearest trail entry, A* on trail, road to destination.
+        if (trailSegment is null)
+            progress?.Report("Trail A* found no path — network may be disconnected between these locations");
+
+        // Hybrid stitch: road-to-trail (when origin is far from trail), trail segment
+        // (already computed above), trail-to-road (when dest is far from trail).
         var entryPoint = (originNode.Lat, originNode.Lon);
-        var exitPoint = (destNode.Lat, destNode.Lon);
+        var exitPoint  = (destNode.Lat, destNode.Lon);
 
-        progress?.Report("Routing road → trail entry…");
-        var roadToTrail = await _roadEngine.RouteAsync(options with { Destination = entryPoint });
-
-        progress?.Report("Routing on trail…");
-        var trailSegment = await _track.RouteAsync(options with
+        DirectionsRoute? roadToTrail = null;
+        if (originSnap > SnapThresholdM)
         {
-            Origin = entryPoint,
-            Destination = exitPoint,
-        });
+            progress?.Report("Routing road → trail entry…");
+            roadToTrail = await _roadEngine.RouteAsync(options with { Destination = entryPoint });
+        }
 
-        progress?.Report("Routing trail exit → road…");
-        var trailToRoad = await _roadEngine.RouteAsync(options with { Origin = exitPoint });
+        DirectionsRoute? trailToRoad = null;
+        if (destSnap > SnapThresholdM)
+        {
+            progress?.Report("Routing trail exit → road…");
+            trailToRoad = await _roadEngine.RouteAsync(options with { Origin = exitPoint });
+        }
 
         progress?.Report("Stitching route…");
         return Stitch(roadToTrail, trailSegment, trailToRoad, options.Profile);
@@ -116,7 +126,7 @@ public class HybridRouter : IRoutingEngine
             if (r is null) return;
             allLegs.AddRange(r.Legs);
             totalDist += r.Distance;
-            totalDur += r.Duration;
+            totalDur  += r.Duration;
         }
 
         AddLegs(roadIn);
@@ -127,10 +137,59 @@ public class HybridRouter : IRoutingEngine
         {
             Distance = totalDist,
             Duration = totalDur,
-            Legs = allLegs,
-            Profile = profile,
+            Legs     = allLegs,
+            Profile  = profile,
         };
 
         return RouteUtils.AttachHighwayWarning(stitched);
+    }
+
+    private static DirectionsRoute BuildTrailRoute(List<GraphNode> path, RouteProfile profile)
+    {
+        var shape = path.Select(n => (n.Lon, n.Lat)).ToList();
+        double totalDist = 0;
+        for (int i = 1; i < path.Count; i++)
+            totalDist += RouteUtils.HaversineMeters(
+                path[i - 1].Lat, path[i - 1].Lon,
+                path[i].Lat,     path[i].Lon);
+
+        var steps = new List<LegStep>
+        {
+            new()
+            {
+                Type             = ManeuverType.Start,
+                Instruction      = "Follow the trail",
+                Distance         = totalDist,
+                Duration         = totalDist / 5.5, // ~20 km/h
+                BeginShapeIndex  = 0,
+                EndShapeIndex    = shape.Count - 1,
+                ManeuverLocation = shape[0],
+            },
+            new()
+            {
+                Type             = ManeuverType.Destination,
+                Instruction      = "Arrive at destination",
+                BeginShapeIndex  = shape.Count - 1,
+                EndShapeIndex    = shape.Count - 1,
+                ManeuverLocation = shape[^1],
+            },
+        };
+
+        var leg = new RouteLeg
+        {
+            Distance = totalDist,
+            Duration = totalDist / 5.5,
+            Summary  = "Trail route",
+            Steps    = steps,
+            Shape    = shape,
+        };
+
+        return new DirectionsRoute
+        {
+            Distance = totalDist,
+            Duration = totalDist / 5.5,
+            Legs     = [leg],
+            Profile  = profile,
+        };
     }
 }

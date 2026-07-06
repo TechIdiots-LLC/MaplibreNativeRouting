@@ -11,6 +11,7 @@
 ### 🐞 Bug fixes
 - `HybridRouter` now returns the trail route immediately when trail A\* succeeds, regardless of snap distances; previously a pin placed >200 m from the trail (e.g. on a nearby road) would discard a valid trail path and fall through to a hybrid road stitch that always failed because the trail exit node is in the forest with no road access in the MVT graph
 - `NavigationSession.StartAsync` now re-throws `OperationCanceledException` instead of swallowing it; previously a routing timeout caused `StartAsync` to return `null` (showing "No route found") rather than propagating the cancellation so `MapViewModel` could show the proper "Route timed out" message
+- `RouteOverlay.SetOrAddSource` now uses a `HashSet<string>` to track which layers have been added rather than relying on `SetGeoJsonSource` throwing when the source doesn't exist; on some MapLibre platforms `SetGeoJsonSource` succeeds silently on an unknown source ID, causing `AddLineLayer` to never be called and the route line to be invisible
 
 ## 0.0.10
 ### 🐞 Bug fixes

@@ -17,10 +17,14 @@ public class RouteOverlay
     private const string HighwayLayerId = "routing-highway-line";
 
     private IMapLibreMapController? _controller;
+    // Tracks which layer IDs have been added to the current controller instance.
+    // Cleared whenever the controller changes so the next ShowRoute re-adds fresh.
+    private readonly HashSet<string> _activeLayers = [];
 
     public void SetController(IMapLibreMapController? controller)
     {
         _controller = controller;
+        _activeLayers.Clear();
     }
 
     public void ShowRoute(DirectionsRoute route)
@@ -67,20 +71,21 @@ public class RouteOverlay
         TryRemove(HighwayLayerId, HighwaySourceId);
     }
 
-    // Adds the source + line layer, or updates the source if already present.
+    // Adds source + line layer on first call; updates only the source data on subsequent calls.
     private void SetOrAddSource(
         string sourceId, string layerId, string geoJson,
         Dictionary<string, object?> paint)
     {
-        try
+        if (_activeLayers.Contains(layerId))
         {
             _controller!.SetGeoJsonSource(sourceId, geoJson);
         }
-        catch
+        else
         {
             _controller!.AddGeoJsonSource(sourceId, geoJson);
             _controller.AddLineLayer(layerId, sourceId,
                 belowLayerId: null, sourceLayer: null, properties: paint);
+            _activeLayers.Add(layerId);
         }
     }
 
@@ -88,6 +93,7 @@ public class RouteOverlay
     {
         try { _controller?.RemoveLayer(layerId); } catch { }
         try { _controller?.RemoveSource(sourceId); } catch { }
+        _activeLayers.Remove(layerId);
     }
 
     private static string BuildRouteGeoJson(DirectionsRoute route)

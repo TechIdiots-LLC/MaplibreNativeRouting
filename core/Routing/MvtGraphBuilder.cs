@@ -13,12 +13,14 @@ internal static class MvtGraphBuilder
         double originLat, double originLon,
         double destLat, double destLon,
         MvtCostingModel costing,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IProgress<string>? progress = null)
     {
         var tileData = await tiles.GetCorridorTilesAsync(
-            originLat, originLon, destLat, destLon, RoutingZoom, ct)
+            originLat, originLon, destLat, destLon, RoutingZoom, ct, progress)
             .ConfigureAwait(false);
 
+        progress?.Report($"Parsing {tileData.Count} tile(s)…");
         var segments = new List<MvtRoadSegment>();
 
         foreach (var (coord, data) in tileData)
@@ -28,6 +30,7 @@ internal static class MvtGraphBuilder
             ExtractSegments(mvtTile, coord, segments);
         }
 
+        progress?.Report("Building road graph…");
         return RoadGraph.Build(segments, costing);
     }
 
@@ -37,12 +40,14 @@ internal static class MvtGraphBuilder
         double destLat, double destLon,
         MvtCostingModel costing,
         double expansionFactor,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IProgress<string>? progress = null)
     {
         var tileData = await tiles.GetCorridorTilesAsync(
-            originLat, originLon, destLat, destLon, RoutingZoom, ct)
+            originLat, originLon, destLat, destLon, RoutingZoom, ct, progress)
             .ConfigureAwait(false);
 
+        progress?.Report($"Parsing {tileData.Count} tile(s)…");
         var segments = new List<MvtRoadSegment>();
         foreach (var (coord, data) in tileData)
         {
@@ -51,6 +56,7 @@ internal static class MvtGraphBuilder
             ExtractSegments(mvtTile, coord, segments);
         }
 
+        progress?.Report("Building road graph…");
         return RoadGraph.Build(segments, costing);
     }
 

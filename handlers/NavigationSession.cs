@@ -40,7 +40,11 @@ public class NavigationSession : IAsyncDisposable
     /// <summary>Calculates a route and starts listening for GPS updates.</summary>
     public async Task<DirectionsRoute?> StartAsync(RouteOptions options)
     {
-        var tracks = await _dataSource.GetRoutableTrackFeaturesAsync();
+        // Only fetch track features from the data source if the caller hasn't already
+        // provided them (e.g. MapViewModel pre-populates them to avoid a double fetch).
+        var tracks = options.TrackFeatures.Count > 0
+            ? options.TrackFeatures
+            : await _dataSource.GetRoutableTrackFeaturesAsync();
         var optionsWithTracks = options with { TrackFeatures = tracks };
 
         IRoutingEngine engine = options.Profile switch

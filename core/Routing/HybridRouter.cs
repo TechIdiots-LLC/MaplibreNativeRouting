@@ -34,17 +34,29 @@ public class HybridRouter : IRoutingEngine
 
     public async Task<DirectionsRoute?> RouteAsync(RouteOptions options)
     {
-        if (options.TrackFeatures.Count == 0)
-            return await _roadEngine.RouteAsync(options);
+        var progress = options.Progress;
 
+        if (options.TrackFeatures.Count == 0)
+        {
+            progress?.Report("No trail features — routing by road only…");
+            return await _roadEngine.RouteAsync(options);
+        }
+
+        progress?.Report("Building trail graph…");
         var graph = SpatialGraph.Build(options.TrackFeatures);
         if (graph.Nodes.Count == 0)
+        {
+            progress?.Report("No trail graph — routing by road only…");
             return await _roadEngine.RouteAsync(options);
+        }
 
         var originNode = graph.NearestNode(options.Origin.Lat, options.Origin.Lon);
         var destNode = graph.NearestNode(options.Destination.Lat, options.Destination.Lon);
         if (originNode is null || destNode is null)
+        {
+            progress?.Report("Could not snap to trail — routing by road only…");
             return await _roadEngine.RouteAsync(options);
+        }
 
         double originSnap = RouteUtils.HaversineMeters(
             options.Origin.Lat, options.Origin.Lon, originNode.Lat, originNode.Lon);
@@ -53,20 +65,29 @@ public class HybridRouter : IRoutingEngine
 
         // Both ends snap to the track network → pure trail route.
         if (originSnap <= SnapThresholdM && destSnap <= SnapThresholdM)
+        {
+            progress?.Report("Routing on trail…");
             return await _track.RouteAsync(options);
+        }
 
         // Partial or no track coverage → hybrid stitch.
         var entryPoint = (originNode.Lat, originNode.Lon);
         var exitPoint = (destNode.Lat, destNode.Lon);
 
+        progress?.Report("Routing road → trail entry…");
         var roadToTrail = await _roadEngine.RouteAsync(options with { Destination = entryPoint });
+
+        progress?.Report("Routing on trail…");
         var trailSegment = await _track.RouteAsync(options with
         {
             Origin = entryPoint,
             Destination = exitPoint,
         });
+
+        progress?.Report("Routing trail exit → road…");
         var trailToRoad = await _roadEngine.RouteAsync(options with { Origin = exitPoint });
 
+        progress?.Report("Stitching route…");
         return Stitch(roadToTrail, trailSegment, trailToRoad, options.Profile);
     }
 

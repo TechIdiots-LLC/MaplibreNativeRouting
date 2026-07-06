@@ -7,6 +7,16 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.6
+### ✨ Features and improvements
+- `IProgress<string>? Progress` on `RouteOptions` — pass a `Progress<string>` callback to receive real-time routing phase messages; callbacks are marshalled back to the capturing `SynchronizationContext` (i.e. the UI thread when created from a MAUI command handler)
+- `HybridRouter` reports phases: "Building trail graph…", "Routing road → trail entry…", "Routing on trail…", "Routing trail exit → road…", "Stitching route…", and fallback messages when no trail data or snap is available
+- `MvtRouter` reports phases: "Resolving tile source…", tile download count ("Downloading tiles (N/total)…"), "Parsing N tile(s)…", "Building road graph…", "Searching for route…", and retry messages
+- `TileProvider.GetCorridorTilesAsync` reports per-tile download progress via `IProgress<string>`
+- `NavigationSession.StartAsync` respects caller-provided `TrackFeatures` — if `RouteOptions.TrackFeatures` is already populated the session skips its own `IRouteDataSource` fetch, eliminating a redundant round-trip when the caller has already loaded features
+
+### 🐞 Bug fixes
+
 ## 0.0.5
 ### ✨ Features and improvements
 - `ITileCacheProvider` interface — optionally share a tile cache between the routing plugin and the host app's map renderer; routing plugin reads from the shared cache before HTTP and writes back tiles it downloads

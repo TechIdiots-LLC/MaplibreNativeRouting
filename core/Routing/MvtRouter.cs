@@ -20,6 +20,9 @@ public sealed class MvtRouter : IRoutingEngine
             throw new InvalidOperationException(
                 "MvtTileJsonUrl must be set on RouteOptions when using an offline or hybrid-offline profile.");
 
+        var progress = options.Progress;
+
+        progress?.Report("Resolving tile source…");
         var provider = await GetOrCreateProviderAsync(
                 options.MvtTileJsonUrl, options.TileCacheProvider, options.CancellationToken)
             .ConfigureAwait(false);
@@ -32,12 +35,13 @@ public sealed class MvtRouter : IRoutingEngine
         for (int attempt = 0; attempt <= MaxRetries && path == null; attempt++)
         {
             options.CancellationToken.ThrowIfCancellationRequested();
+            if (attempt > 0) progress?.Report($"Retrying (attempt {attempt + 1})…");
 
             graph = await MvtGraphBuilder.BuildAsync(
                 provider,
                 options.Origin.Lat, options.Origin.Lon,
                 options.Destination.Lat, options.Destination.Lon,
-                costing, options.CancellationToken).ConfigureAwait(false);
+                costing, options.CancellationToken, progress).ConfigureAwait(false);
 
             var startNode = graph.NearestNode(options.Origin.Lat, options.Origin.Lon);
             var goalNode = graph.NearestNode(options.Destination.Lat, options.Destination.Lon);
@@ -51,6 +55,7 @@ public sealed class MvtRouter : IRoutingEngine
 
             if (startDist > MaxSnapDistanceM || goalDist > MaxSnapDistanceM) continue;
 
+            progress?.Report("Searching for route…");
             path = BidirectionalAStarSolver.FindPath(
                 graph, startNode, goalNode, costing.MaxSpeedMps, options.CancellationToken);
         }

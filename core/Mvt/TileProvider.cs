@@ -80,7 +80,8 @@ internal sealed class TileProvider : IDisposable
     public async Task<List<(TileCoord Coord, byte[] Data)>> GetCorridorTilesAsync(
         double originLat, double originLon,
         double destLat, double destLon,
-        int zoom, CancellationToken ct = default)
+        int zoom, CancellationToken ct = default,
+        IProgress<string>? progress = null)
     {
         double straightLineDist = RouteUtils.HaversineMeters(originLat, originLon, destLat, destLon);
         double expansionKm = Math.Max(straightLineDist / 1000.0 * 0.3, 5.0);
@@ -97,6 +98,8 @@ internal sealed class TileProvider : IDisposable
         }
 
         var tileCoords = TileCoord.CoverBoundingBox(minLat, minLon, maxLat, maxLon, zoom);
+        int total = tileCoords.Count;
+        int done = 0;
 
         var semaphore = new SemaphoreSlim(MaxConcurrentDownloads);
         var tasks = tileCoords.Select(async coord =>
@@ -105,6 +108,8 @@ internal sealed class TileProvider : IDisposable
             try
             {
                 var data = await GetTileDataAsync(coord, ct).ConfigureAwait(false);
+                int n = Interlocked.Increment(ref done);
+                progress?.Report($"Downloading tiles ({n}/{total})…");
                 return (Coord: coord, Data: data);
             }
             finally

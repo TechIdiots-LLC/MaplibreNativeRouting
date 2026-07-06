@@ -39,4 +39,10 @@ public record RouteOptions
     public IReadOnlyList<TrackFeature> TrackFeatures { get; init; } = [];
 
     public CancellationToken CancellationToken { get; init; }
+
+    /// <summary>Optional progress sink. Each engine reports short status strings such as
+    /// "Downloading tiles (3/18)…" or "Searching for route…". Callbacks are invoked on
+    /// whatever context the engine runs on — callers should wrap with
+    /// <c>new Progress&lt;string&gt;(msg =&gt; ...)</c> to marshal back to the UI thread.</summary>
+    public IProgress<string>? Progress { get; init; }
 }

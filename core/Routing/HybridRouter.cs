@@ -77,10 +77,6 @@ public class HybridRouter : IRoutingEngine
             : null;
 
         // Trail A* found a path → return it directly, regardless of snap distances.
-        // The route may start/end a short distance from the pins (at the nearest trail node),
-        // which is acceptable. Don't discard a valid trail route just because an endpoint is
-        // slightly outside the snap threshold — the hybrid road stitch for those extra meters
-        // fails anyway when the trail node is forest-only with no road access in the MVT data.
         if (trailSegment is not null)
         {
             progress?.Report($"Trail route found ({trailSegment.Distance / 1000.0:F1} km).");
@@ -111,6 +107,56 @@ public class HybridRouter : IRoutingEngine
 
         progress?.Report("Stitching route…");
         return Stitch(roadToTrail, trailSegment, trailToRoad, options.Profile);
+    }
+
+    /// <summary>
+    /// Computes up to <paramref name="maxCount"/> distinct trail routes between the same two
+    /// endpoints by re-running A* with progressively penalised edges from previous paths.
+    /// Results are sorted shortest-distance first. Falls back to a single <see cref="RouteAsync"/>
+    /// result if trail A* finds no path at all.
+    /// </summary>
+    public async Task<List<DirectionsRoute>> FindAlternativesAsync(RouteOptions options, int maxCount)
+    {
+        if (options.TrackFeatures.Count == 0 || maxCount <= 0)
+            goto fallback;
+
+        var graph = SpatialGraph.Build(options.TrackFeatures);
+        if (graph.Nodes.Count == 0) goto fallback;
+
+        var originNode = graph.NearestNode(options.Origin.Lat, options.Origin.Lon);
+        var destNode   = graph.NearestNode(options.Destination.Lat, options.Destination.Lon);
+        if (originNode is null || destNode is null) goto fallback;
+
+        var results = new List<DirectionsRoute>();
+        HashSet<int>? penalized = null;
+
+        for (int attempt = 0; attempt < Math.Min(maxCount, 5); attempt++)
+        {
+            var path = AStarSolver.FindPath(graph, originNode, destNode, penalized, penalty: 3.0);
+            if (path is null || path.Count < 2) break;
+
+            var route = BuildTrailRoute(path, options.Profile);
+
+            // Skip near-duplicate routes (within 1 km of a result already in the list).
+            if (results.Any(r => Math.Abs(r.Distance - route.Distance) < 1_000)) break;
+
+            results.Add(route);
+
+            // Penalise nodes from this path so the next run is forced onto a different corridor.
+            var pathIds = new HashSet<int>(path.Select(n => n.Id));
+            penalized = penalized is null ? pathIds : new HashSet<int>(penalized.Concat(pathIds));
+        }
+
+        if (results.Count > 0)
+        {
+            // Return shortest first so the caller can default to results[0].
+            results.Sort((a, b) => a.Distance.CompareTo(b.Distance));
+            return results;
+        }
+
+        fallback:
+        var fallbackRoute = await RouteAsync(options);
+        return fallbackRoute is null ? [] : [fallbackRoute];
     }
 
     private static DirectionsRoute? Stitch(

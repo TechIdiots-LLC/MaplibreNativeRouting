@@ -7,6 +7,17 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.13
+### ✨ Features and improvements
+- `IRoutingEngine` gains a default `FindAlternativesAsync(options, maxCount)` method — wraps `RouteAsync` for simple engines, overridable for engines that can generate genuine alternatives
+- `HybridRouter.FindAlternativesAsync` computes up to N distinct trail routes by re-running A* with progressively penalised edges from previously found paths (penalty ×3), then sorts results shortest-distance first so the caller can default to `results[0]`
+- `AStarSolver.FindPath` accepts an optional `penalizedNodeIds` set and `penalty` multiplier — used by `FindAlternativesAsync` to steer each successive alternative away from previously found corridors
+- `NavigationSession.StartAsync` accepts a `maxRoutes` parameter and calls `FindAlternativesAsync`; exposes `RouteAlternatives`, `SelectedRouteIndex`, and a new `SelectAlternative(index)` method for switching between computed alternatives without re-routing
+- `RouteOverlay.ShowRoutes` renders the primary (selected) route in blue and all other alternatives in grey below it; alternate routes are stored in a single GeoJSON `FeatureCollection` (`routing-alt-line` layer)
+
+### 🐞 Bug fixes
+- `RouteOverlay.SetOrAddSource` now defensively calls `RemoveLayer` / `RemoveSource` before `AddGeoJsonSource` when the layer is not in `_activeLayers`; on some MapLibre platform implementations `RemoveSource` in `ClearRoute` silently succeeds without actually removing the source, causing the subsequent `AddGeoJsonSource` to fail when starting a second route after stopping the first
+
 ## 0.0.12
 ### 🐞 Bug fixes
 - `SpatialGraph.Build` now uses a dynamically computed grid neighbourhood in `GetOrCreateNode` instead of a hardcoded 3×3 search; at 45°N latitude, longitude cells are only ~15.7 m wide, so the previous 3×3 neighbourhood covered just ~27 m — nodes 30–50 m apart (well within `EndpointMergeM=50 m`) were silently missing their merge, leaving many trail segments disconnected

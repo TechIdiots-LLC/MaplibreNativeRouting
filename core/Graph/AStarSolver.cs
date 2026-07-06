@@ -6,7 +6,13 @@ namespace MaplibreNative.Routing.Core.Graph;
 /// to the goal node. Returns null if no path exists.</summary>
 public static class AStarSolver
 {
-    public static List<GraphNode>? FindPath(SpatialGraph graph, GraphNode start, GraphNode goal)
+    /// <summary>Find the shortest path from <paramref name="start"/> to <paramref name="goal"/>.
+    /// Optionally apply a cost <paramref name="penalty"/> multiplier to edges that lead into
+    /// any node in <paramref name="penalizedNodeIds"/> — used to steer alternative paths away
+    /// from a previously found route.</summary>
+    public static List<GraphNode>? FindPath(
+        SpatialGraph graph, GraphNode start, GraphNode goal,
+        HashSet<int>? penalizedNodeIds = null, double penalty = 1.0)
     {
         if (start.Id == goal.Id) return [start];
 
@@ -32,7 +38,11 @@ public static class AStarSolver
 
             foreach (var edge in edges)
             {
-                var tentative = gScore.GetValueOrDefault(currentId, double.MaxValue) + edge.DistanceMeters;
+                double edgeCost = edge.DistanceMeters;
+                if (penalizedNodeIds is not null && penalizedNodeIds.Contains(edge.ToNodeId))
+                    edgeCost *= penalty;
+
+                var tentative = gScore.GetValueOrDefault(currentId, double.MaxValue) + edgeCost;
                 if (tentative < gScore.GetValueOrDefault(edge.ToNodeId, double.MaxValue))
                 {
                     cameFrom[edge.ToNodeId] = currentId;

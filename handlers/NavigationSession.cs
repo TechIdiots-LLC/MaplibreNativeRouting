@@ -21,6 +21,8 @@ public class NavigationSession : IAsyncDisposable
     private ManeuverAnnouncerHelper? _announcer;
     private DirectionsRoute? _activeRoute;
     private bool _listening;
+    private List<DirectionsRoute> _routeAlternatives = [];
+    private int _selectedRouteIndex;
 
     // Fires on the main thread whenever progress updates.
     public event EventHandler<RouteProgress>? ProgressUpdated;
@@ -29,6 +31,8 @@ public class NavigationSession : IAsyncDisposable
     public event EventHandler<ManeuverAnnouncementEventArgs>? AnnouncementNeeded;
 
     public DirectionsRoute? ActiveRoute => _activeRoute;
+    public IReadOnlyList<DirectionsRoute> RouteAlternatives => _routeAlternatives;
+    public int SelectedRouteIndex => _selectedRouteIndex;
     public bool IsNavigating => _activeRoute is not null && _listening;
 
     public NavigationSession(IRouteDataSource dataSource, RouteOverlay overlay)
@@ -37,11 +41,10 @@ public class NavigationSession : IAsyncDisposable
         _overlay = overlay;
     }
 
-    /// <summary>Calculates a route and starts listening for GPS updates.</summary>
-    public async Task<DirectionsRoute?> StartAsync(RouteOptions options)
+    /// <summary>Calculates up to <paramref name="maxRoutes"/> alternative routes (sorted shortest
+    /// first) and starts listening for GPS updates on the shortest one.</summary>
+    public async Task<DirectionsRoute?> StartAsync(RouteOptions options, int maxRoutes = 1)
     {
-        // Only fetch track features from the data source if the caller hasn't already
-        // provided them (e.g. MapViewModel pre-populates them to avoid a double fetch).
         var tracks = options.TrackFeatures.Count > 0
             ? options.TrackFeatures
             : await _dataSource.GetRoutableTrackFeaturesAsync();
@@ -56,25 +59,28 @@ public class NavigationSession : IAsyncDisposable
             _ => new ValhallaMtbRouter(),
         };
 
-        // Run the engine on a thread-pool thread so the MAUI main thread stays free
-        // to process IProgress<string> callbacks while routing is in progress.
-        DirectionsRoute? route;
-        try { route = await Task.Run(() => engine.RouteAsync(optionsWithTracks)); }
-        catch (OperationCanceledException) { throw; }  // let caller show timeout message
+        // Run on a thread-pool thread so the MAUI main thread stays free to handle IProgress callbacks.
+        List<DirectionsRoute> alternatives;
+        try { alternatives = await Task.Run(() => engine.FindAlternativesAsync(optionsWithTracks, maxRoutes)); }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             Debug.WriteLine($"[NavigationSession] Route failed: {ex}");
             return null;
         }
 
-        if (route is null) return null;
+        if (alternatives.Count == 0) return null;
+
+        _routeAlternatives = alternatives;
+        _selectedRouteIndex = 0;
+        var route = alternatives[0];
 
         _activeRoute = route;
         _tracker = new RouteProgressTracker(route);
         _announcer = new ManeuverAnnouncerHelper();
         _announcer.AnnouncementNeeded += (s, e) => AnnouncementNeeded?.Invoke(s, e);
 
-        _overlay.ShowRoute(route);
+        _overlay.ShowRoutes(_routeAlternatives, 0);
 
         Geolocation.LocationChanged += OnLocationChanged;
         if (!Geolocation.IsListeningForeground)
@@ -87,6 +93,16 @@ public class NavigationSession : IAsyncDisposable
         return route;
     }
 
+    /// <summary>Switch to a different computed alternative without re-routing.</summary>
+    public void SelectAlternative(int index)
+    {
+        if (index < 0 || index >= _routeAlternatives.Count) return;
+        _selectedRouteIndex = index;
+        _activeRoute = _routeAlternatives[index];
+        _tracker = new RouteProgressTracker(_activeRoute);
+        _overlay.ShowRoutes(_routeAlternatives, index);
+    }
+
     /// <summary>Stops navigation and removes the route overlay.</summary>
     public async Task StopAsync()
     {
@@ -95,6 +111,8 @@ public class NavigationSession : IAsyncDisposable
             Geolocation.StopListeningForeground();
         _listening = false;
         _activeRoute = null;
+        _routeAlternatives = [];
+        _selectedRouteIndex = 0;
         _tracker = null;
         _announcer = null;
         _overlay.ClearRoute();

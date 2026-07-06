@@ -7,26 +7,26 @@ namespace MaplibreNative.Routing.Core.Graph;
 /// Builds an undirected spatial graph from TrackFeature (LineString) coordinate arrays.
 ///
 /// Two-phase construction (inspired by geojson-path-finder + turf's addMissingIntersectionPoints):
-///   Phase 1 — T-junction insertion: for each trail segment endpoint, project it onto
-///              every nearby trail segment's interior. If the perpendicular distance is
-///              within JunctionSnapM, insert the projected point into that segment so the
-///              graph has an explicit node at the T-intersection.
-///   Phase 2 — Graph build: create nodes with differentiated merge radii (endpoints 15 m,
-///              interior 5 m) and connect them with edges.
+///   Phase 1 — T-junction insertion: for each trail endpoint, find the nearest foot-of-perpendicular
+///              on every other trail's interior within JunctionSnapM. When found, insert that foot
+///              into the target trail AND snap the source endpoint to the same location so both
+///              features share the identical coordinate — Phase 2 then merges them at 0 m
+///              regardless of which feature is processed first (fixes the ordering problem).
+///   Phase 2 — Graph build: create nodes with differentiated merge radii (endpoints 50 m,
+///              interior 5 m) using a dynamic grid neighbourhood sized to fully cover mergeRadius.
 /// </summary>
 public class SpatialGraph
 {
-    // After junction insertion endpoints of different features are already snapped together,
-    // so a small merge radius suffices for de-duplication.
-    // 50 m bridges typical road crossings (road width ~10-30 m) and club-boundary gaps.
+    // 50 m bridges typical road crossings and club-boundary endpoint gaps.
     private const double EndpointMergeM = 50;
     private const double InteriorMergeM = 5;
 
-    // How far a trail endpoint can be from another trail's line to still insert a junction node.
+    // How far a trail endpoint can be from another trail's interior to insert a T-junction.
     // 75 m catches T-junctions at road crossings and slightly offset trail meets.
     private const double JunctionSnapM = 75;
 
-    // Grid cell ~22 m at mid-latitudes; 3×3 neighbourhood covers ±44 m.
+    // Grid cell size in degrees. At 45°N: ~22 m latitude, ~15.7 m longitude per cell.
+    // GetOrCreateNode computes a dynamic neighbourhood radius so any merge radius is fully covered.
     private const double CellDeg = 0.0002;
 
     public IReadOnlyList<GraphNode> Nodes { get; }
@@ -62,9 +62,13 @@ public class SpatialGraph
         int GetOrCreateNode(double lat, double lon, double mergeRadius)
         {
             var (cl, cn) = CellOf(lat, lon);
-            for (int dl = -1; dl <= 1; dl++)
+            // At 45°N, longitude cells are ~15.7 m wide (cos ≈ 0.7 × 22.2 m latitude cell).
+            // Use that shorter dimension as the worst case when sizing the neighbourhood so
+            // mergeRadius is always fully covered in every direction.
+            int cells = Math.Max(1, (int)Math.Ceiling(mergeRadius / (CellDeg * 111_000.0 * 0.7)));
+            for (int dl = -cells; dl <= cells; dl++)
             {
-                for (int dn = -1; dn <= 1; dn++)
+                for (int dn = -cells; dn <= cells; dn++)
                 {
                     if (!grid.TryGetValue((cl + dl, cn + dn), out var bucket)) continue;
                     foreach (int id in bucket)
@@ -132,20 +136,21 @@ public class SpatialGraph
     // ── T-junction insertion ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// For each trail segment's start and end point, finds the nearest point on every
-    /// other segment's interior. If that perpendicular distance is within
-    /// <paramref name="thresholdM"/>, inserts a new coordinate at the projected position so
-    /// the graph builder creates an explicit node there, connecting the two trails.
-    /// Uses a bounding-box pre-filter so only nearby segments are checked.
+    /// For each trail endpoint, finds the nearest foot-of-perpendicular on every other trail's
+    /// interior within <paramref name="thresholdM"/>. When found:
+    /// <list type="bullet">
+    ///   <item>Inserts the projected foot into the target trail's coordinate list.</item>
+    ///   <item>Snaps the source endpoint to that same projected location so both features share
+    ///         the identical coordinate — Phase 2 merges them at 0 m regardless of processing order.</item>
+    /// </list>
+    /// Uses a bounding-box pre-filter so only nearby features are checked.
     /// </summary>
     private static void InsertMissingJunctions(
         List<List<(double Lon, double Lat)>> coordLists,
         double thresholdM)
     {
-        // 1° ≈ 111 km; convert threshold to a degree margin for bbox pre-filter.
         double threshDeg = thresholdM / 90_000.0;
 
-        // Pre-compute expanded bboxes for all features.
         var bboxes = new (double MinLat, double MaxLat, double MinLon, double MaxLon)[coordLists.Count];
         for (int i = 0; i < coordLists.Count; i++)
         {
@@ -167,21 +172,28 @@ public class SpatialGraph
             var coords = coordLists[i];
             if (coords.Count < 2) continue;
 
-            // Only check endpoints; interior points are handled by the merge radius.
-            foreach (var ep in new[] { coords[0], coords[^1] })
+            // Iterate by index so we can update coords[epIdx] in-place after snapping.
+            foreach (int epIdx in new[] { 0, coords.Count - 1 })
             {
-                double eLat = ep.Lat, eLon = ep.Lon;
+                double eLat = coords[epIdx].Lat, eLon = coords[epIdx].Lon;
 
                 for (int j = 0; j < coordLists.Count; j++)
                 {
                     if (i == j) continue;
 
-                    // Bbox pre-filter.
                     var bb = bboxes[j];
                     if (eLat < bb.MinLat || eLat > bb.MaxLat) continue;
                     if (eLon < bb.MinLon || eLon > bb.MaxLon) continue;
 
-                    TryInsertProjection(eLat, eLon, coordLists[j], thresholdM);
+                    var snapped = TryInsertProjection(eLat, eLon, coordLists[j], thresholdM);
+                    if (snapped.HasValue)
+                    {
+                        // Snap trail i's endpoint to the projected location so both features
+                        // share the same coordinate — 0 m merge in Phase 2, order-independent.
+                        coords[epIdx] = snapped.Value;
+                        eLat = snapped.Value.Lat;
+                        eLon = snapped.Value.Lon;
+                    }
                 }
             }
         }
@@ -189,10 +201,12 @@ public class SpatialGraph
 
     /// <summary>
     /// Projects (eLat, eLon) onto each segment of <paramref name="target"/>.
-    /// Inserts the best projected point if it is within <paramref name="thresholdM"/>
-    /// and not already within 2 m of an existing vertex.
+    /// If the nearest projected point is within <paramref name="thresholdM"/> and not already
+    /// within 2 m of an existing vertex, inserts it into <paramref name="target"/> and returns
+    /// the inserted coordinate so the caller can snap its endpoint to the same location.
+    /// Returns null when no insertion was made.
     /// </summary>
-    private static void TryInsertProjection(
+    private static (double Lon, double Lat)? TryInsertProjection(
         double eLat, double eLon,
         List<(double Lon, double Lat)> target,
         double thresholdM)
@@ -218,13 +232,14 @@ public class SpatialGraph
             }
         }
 
-        if (bestIdx < 0) return;
+        if (bestIdx < 0) return null;
 
         // Skip if already within 2 m of an existing vertex (no duplicate needed).
-        if (RouteUtils.HaversineMeters(target[bestIdx].Lat, target[bestIdx].Lon, bestLat, bestLon) < 2.0) return;
-        if (RouteUtils.HaversineMeters(target[bestIdx + 1].Lat, target[bestIdx + 1].Lon, bestLat, bestLon) < 2.0) return;
+        if (RouteUtils.HaversineMeters(target[bestIdx].Lat, target[bestIdx].Lon, bestLat, bestLon) < 2.0) return null;
+        if (RouteUtils.HaversineMeters(target[bestIdx + 1].Lat, target[bestIdx + 1].Lon, bestLat, bestLon) < 2.0) return null;
 
         target.Insert(bestIdx + 1, (bestLon, bestLat));
+        return (bestLon, bestLat);
     }
 
     /// <summary>

@@ -7,6 +7,11 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.12
+### 🐞 Bug fixes
+- `SpatialGraph.Build` now uses a dynamically computed grid neighbourhood in `GetOrCreateNode` instead of a hardcoded 3×3 search; at 45°N latitude, longitude cells are only ~15.7 m wide, so the previous 3×3 neighbourhood covered just ~27 m — nodes 30–50 m apart (well within `EndpointMergeM=50 m`) were silently missing their merge, leaving many trail segments disconnected
+- `SpatialGraph.InsertMissingJunctions` now snaps the source trail's endpoint to the projected T-junction location after inserting it into the target trail; previously the source endpoint and the inserted projection foot were at different coordinates (0–75 m apart), and Phase 2 used `InteriorMergeM=5 m` for the inserted foot — if the source was processed first, the two nodes were never merged regardless of endpoint merge radius (ordering bug); snapping both to the same coordinate gives a guaranteed 0 m merge in Phase 2
+
 ## 0.0.11
 ### 🐞 Bug fixes
 - `HybridRouter` now returns the trail route immediately when trail A\* succeeds, regardless of snap distances; previously a pin placed >200 m from the trail (e.g. on a nearby road) would discard a valid trail path and fall through to a hybrid road stitch that always failed because the trail exit node is in the forest with no road access in the MVT graph

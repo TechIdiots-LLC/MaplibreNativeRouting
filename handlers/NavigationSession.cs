@@ -56,8 +56,10 @@ public class NavigationSession : IAsyncDisposable
             _ => new ValhallaMtbRouter(),
         };
 
+        // Run the engine on a thread-pool thread so the MAUI main thread stays free
+        // to process IProgress<string> callbacks while routing is in progress.
         DirectionsRoute? route;
-        try { route = await engine.RouteAsync(optionsWithTracks); }
+        try { route = await Task.Run(() => engine.RouteAsync(optionsWithTracks)); }
         catch (Exception ex)
         {
             Debug.WriteLine($"[NavigationSession] Route failed: {ex}");

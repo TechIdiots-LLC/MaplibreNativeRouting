@@ -7,6 +7,10 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 0.0.7
+### 🐞 Bug fixes
+- `NavigationSession.StartAsync` now runs the routing engine on a thread-pool thread via `Task.Run`, keeping the MAUI main thread free to process `IProgress<string>` callbacks in real time; previously the engine ran on the main thread, blocking the UI and preventing progress messages from appearing until routing completed
+
 ## 0.0.6
 ### ✨ Features and improvements
 - `IProgress<string>? Progress` on `RouteOptions` — pass a `Progress<string>` callback to receive real-time routing phase messages; callbacks are marshalled back to the capturing `SynchronizationContext` (i.e. the UI thread when created from a MAUI command handler)

@@ -28,7 +28,7 @@ public sealed class MvtRouter : IRoutingEngine
                 options.MvtTileJsonUrl, options.TileCacheProvider, options.CancellationToken)
             .ConfigureAwait(false);
 
-        var costing = new MvtCostingModel(options.Profile, options.UseHighways, options.UseFerry);
+        var costing = new MvtCostingModel(options.Profile, options.HighwaysFor(options.Profile), options.UseFerry);
 
         List<RoadEdge>? path = null;
         RoadGraph? graph = null;

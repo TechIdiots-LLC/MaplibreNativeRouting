@@ -29,9 +29,19 @@ public record RouteOptions
     /// to use HTTP + in-memory caching only.</summary>
     public ITileCacheProvider? TileCacheProvider { get; init; }
 
-    /// <summary>Strongly avoid highways (0 = impossible, 1 = neutral).
-    /// Applied to all Valhalla costing calls.</summary>
-    public double UseHighways { get; init; } = 0.1;
+    /// <summary>
+    /// How willing to take highways, 0 (avoid them as far as possible) to 1 (no different from other roads), offline
+    /// and in Valhalla requests alike. Null, the default: the profile's own, highways avoided strongly (0.1) on the
+    /// motorcycle and trail profiles and not at all by car.
+    /// </summary>
+    public double? UseHighways { get; init; }
+
+    /// <summary><see cref="UseHighways"/>, or the profile's own when it isn't set.</summary>
+    public double HighwaysFor(RouteProfile profile) => UseHighways ?? profile switch
+    {
+        RouteProfile.Auto or RouteProfile.OfflineAuto => 1.0,
+        _ => 0.1,
+    };
 
     /// <summary>Avoid ferry routes.</summary>
     public double UseFerry { get; init; } = 0.0;

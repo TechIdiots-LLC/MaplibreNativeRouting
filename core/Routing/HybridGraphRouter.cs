@@ -39,7 +39,7 @@ public sealed class HybridGraphRouter : IRoutingEngine
         progress?.Report("Resolving tile source…");
         var tiles = await MvtRouter.GetOrCreateProviderAsync(options.MvtTileJsonUrl, options.TileCacheProvider, ct)
             .ConfigureAwait(false);
-        var costing = new MvtCostingModel(options.Profile, options.UseHighways, options.UseFerry);
+        var costing = new MvtCostingModel(options.Profile, options.HighwaysFor(options.Profile), options.UseFerry);
 
         var segments = await MvtGraphBuilder.LoadSegmentsAsync(tiles,
             options.Origin.Lat, options.Origin.Lon, options.Destination.Lat, options.Destination.Lon, ct, progress)

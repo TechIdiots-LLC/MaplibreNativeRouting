@@ -90,4 +90,46 @@ public class CostingTests
         Assert.Contains(steps, s => s.Instruction == "Turn left to stay on Main Street");
         Assert.Contains(steps, s => s.VerbalPreInstruction?.EndsWith("turn left to stay on Main Street") == true);
     }
+
+    /// <summary>A trunk road straight across, and a minor road loop beside it a fifth longer.</summary>
+    private sealed class TrunkWithBackRoad : ITileCacheProvider
+    {
+        private static readonly byte[] Tile = Build(("transportation",
+        [
+            new Line(Props(("class", "trunk")), (200, 2000), (3800, 2000)),
+            new Line(Props(("class", "minor")), (1000, 2000), (1200, 1400), (2800, 1400), (3000, 2000)),
+        ]));
+
+        public Task<byte[]?> GetTileAsync(TileCoord coord, CancellationToken ct = default) =>
+            Task.FromResult<byte[]?>(coord == Here ? Tile : []);
+        public Task SetTileAsync(TileCoord coord, byte[] data, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequestAreaCacheAsync(double minLat, double minLon, double maxLat, double maxLon, int zoom,
+            CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData(null, false)]   // a car takes the highway unless told otherwise
+    [InlineData(0.1, true)]     // told to avoid highways, it takes the back road
+    public async Task ACarTakesTheHighwayUnlessToldNotTo(double? useHighways, bool backRoad)
+    {
+        var route = await RoutingEngines.For(RouteProfile.OfflineAuto).RouteAsync(new RouteOptions
+        {
+            Origin = P(300, 2000), Destination = P(3700, 2000), Profile = RouteProfile.OfflineAuto, UseHighways = useHighways,
+            MvtTileJsonUrl = "https://tiles.invalid/backroad/{z}/{x}/{y}.pbf", TileCacheProvider = new TrunkWithBackRoad(),
+        });
+        Assert.NotNull(route);
+        Assert.Equal(backRoad, route!.Legs[0].Steps.Any(s => s.RoadClass == "minor"));
+    }
+
+    [Fact]
+    public void HighwaysAreAvoidedByDefaultOnlyOffTheCar()
+    {
+        RouteOptions With(double? use) => new() { Origin = (0, 0), Destination = (0, 0), Profile = RouteProfile.OfflineAuto, UseHighways = use };
+        var unset = With(null);
+        Assert.Equal(1.0, unset.HighwaysFor(RouteProfile.OfflineAuto));
+        Assert.Equal(1.0, unset.HighwaysFor(RouteProfile.Auto));
+        Assert.Equal(0.1, unset.HighwaysFor(RouteProfile.HybridOfflineMotorcycle));
+        Assert.Equal(0.1, unset.HighwaysFor(RouteProfile.Motorcycle));
+        Assert.Equal(0.5, With(0.5).HighwaysFor(RouteProfile.OfflineAuto));
+    }
 }

@@ -30,7 +30,7 @@ public class ValhallaMtbRouter : IRoutingEngine
 
         var costingOptions = new JsonObject
         {
-            ["use_highways"] = options.UseHighways,
+            ["use_highways"] = options.HighwaysFor(options.Profile),
             ["use_ferry"] = options.UseFerry,
         };
         foreach (var kv in options.ValhallaExtras)

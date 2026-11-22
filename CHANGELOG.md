@@ -3,6 +3,7 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
+- `RouteOptions.UseHighways` defaults to the profile's own: a car (Auto, Offline Auto) takes highways like any road, and the motorcycle and trail profiles avoid them strongly (0.1) as before. It was 0.1 for every profile, so a car route left NH 16 for every side road beside it. It's now a `double?` (null = the profile's); `RouteOptions.HighwaysFor(profile)` gives the value used
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._

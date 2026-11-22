@@ -219,7 +219,10 @@ internal static class MvtManeuverGenerator
             if (!string.IsNullOrEmpty(step.Ref) && step.Ref != step.StreetName) names.Add(step.Ref!);
 
             string streetLabel = names.Count > 0 ? string.Join(" / ", names) : "";
-            string instruction = BuildInstruction(step.Type, streetLabel, step.BeginShapeIndex, shape);
+            // A turn at a junction that keeps to the same road: "turn right to stay on", not "onto" the road already on
+            string previousLabel = i > 0 ? Label(steps[i - 1]) : "";
+            string instruction = BuildInstruction(step.Type, streetLabel, step.BeginShapeIndex, shape,
+                stays: streetLabel.Length > 0 && streetLabel == previousLabel);
 
             string? verbalPre = null;
             if (i + 1 < steps.Count)
@@ -233,7 +236,9 @@ internal static class MvtManeuverGenerator
                 string turnVerb = TurnVerb(nextStep.Type);
                 verbalPre = string.IsNullOrEmpty(nextLabel)
                     ? $"In {distLabel}, {turnVerb}"
-                    : $"In {distLabel}, {turnVerb} onto {nextLabel}";
+                    : nextLabel == streetLabel && IsTurn(nextStep.Type)
+                        ? $"In {distLabel}, {turnVerb} to stay on {nextLabel}"
+                        : $"In {distLabel}, {turnVerb} onto {nextLabel}";
             }
 
             string? verbalPost = i < steps.Count - 1
@@ -277,8 +282,19 @@ internal static class MvtManeuverGenerator
         return result;
     }
 
+    private static string Label(RawStep step)
+    {
+        var names = new List<string>();
+        if (!string.IsNullOrEmpty(step.StreetName)) names.Add(step.StreetName!);
+        if (!string.IsNullOrEmpty(step.Ref) && step.Ref != step.StreetName) names.Add(step.Ref!);
+        return string.Join(" / ", names);
+    }
+
+    private static bool IsTurn(ManeuverType type) =>
+        type is not (ManeuverType.Start or ManeuverType.Continue or ManeuverType.StayStraight or ManeuverType.Destination);
+
     private static string BuildInstruction(ManeuverType type, string streetLabel,
-        int shapeIndex, List<(double Lon, double Lat)> shape)
+        int shapeIndex, List<(double Lon, double Lat)> shape, bool stays = false)
     {
         if (type == ManeuverType.Start)
         {
@@ -303,9 +319,10 @@ internal static class MvtManeuverGenerator
         }
 
         string verb = TurnVerb(type);
-        return string.IsNullOrEmpty(streetLabel)
-            ? char.ToUpper(verb[0]) + verb[1..]
-            : $"{char.ToUpper(verb[0])}{verb[1..]} onto {streetLabel}";
+        string Verb = char.ToUpper(verb[0]) + verb[1..];
+        return string.IsNullOrEmpty(streetLabel) ? Verb
+            : stays && IsTurn(type) ? $"{Verb} to stay on {streetLabel}"
+            : $"{Verb} onto {streetLabel}";
     }
 
     private static string TurnVerb(ManeuverType type) => type switch

@@ -56,4 +56,38 @@ public class CostingTests
         Assert.InRange(route!.Duration, route.Distance / (90 / 3.6) * 0.95, route.Distance / (90 / 3.6) * 1.05);
         Assert.InRange(route.Legs[0].Steps.Sum(s => s.Duration), route.Duration * 0.95, route.Duration * 1.05);
     }
+
+    /// <summary>Main Street bends left at a junction where Side Road carries straight on.</summary>
+    private sealed class Bend : ITileCacheProvider
+    {
+        private static readonly byte[] Tile = Build(("transportation",
+        [
+            new Line(Props(("class", "minor")), (500, 3000), (2000, 3000), (2000, 1000)),
+            new Line(Props(("class", "minor")), (2000, 3000), (3500, 3000)),
+        ]), ("transportation_name",
+        [
+            new Line(Props(("name", "Main Street"), ("class", "minor")), (500, 3000), (2000, 3000), (2000, 1000)),
+            new Line(Props(("name", "Side Road"), ("class", "minor")), (2000, 3000), (3500, 3000)),
+        ]));
+
+        public Task<byte[]?> GetTileAsync(TileCoord coord, CancellationToken ct = default) =>
+            Task.FromResult<byte[]?>(coord == Here ? Tile : []);
+        public Task SetTileAsync(TileCoord coord, byte[] data, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequestAreaCacheAsync(double minLat, double minLon, double maxLat, double maxLon, int zoom,
+            CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task ATurnThatKeepsToTheRoadSaysSo()
+    {
+        var route = await RoutingEngines.For(RouteProfile.OfflineAuto).RouteAsync(new RouteOptions
+        {
+            Origin = P(600, 3000), Destination = P(2000, 1100), Profile = RouteProfile.OfflineAuto,
+            MvtTileJsonUrl = "https://tiles.invalid/bend/{z}/{x}/{y}.pbf", TileCacheProvider = new Bend(),
+        });
+        Assert.NotNull(route);
+        var steps = route!.Legs[0].Steps;
+        Assert.Contains(steps, s => s.Instruction == "Turn left to stay on Main Street");
+        Assert.Contains(steps, s => s.VerbalPreInstruction?.EndsWith("turn left to stay on Main Street") == true);
+    }
 }

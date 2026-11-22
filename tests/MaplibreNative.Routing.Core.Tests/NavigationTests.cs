@@ -105,7 +105,8 @@ public class NavigationTests
         var rerouted = new TaskCompletionSource<DirectionsRoute>();
         int offRoute = 0;
         engine.OffRoute += (_, _) => offRoute++;
-        engine.Rerouted += (_, r) => rerouted.TrySetResult(r);
+        bool reroutingWhenTold = true;
+        engine.Rerouted += (_, r) => { reroutingWhenTold = engine.IsRerouting; rerouted.TrySetResult(r); };
 
         // Straight on east past the turn, 600 m beyond it
         var sim = new RouteSimulator([(-71.86, 42.35), (-71.833, 42.35)], speedMps: 15);
@@ -120,6 +121,7 @@ public class NavigationTests
         Assert.Same(route, engine.Route);
         Assert.Equal(42.36, route.Legs[0].Shape[^1].Lat, 6);               // still to the destination
         Assert.True(route.Legs[0].Shape[0].Lon > -71.84);                 // from past the turn
+        Assert.False(reroutingWhenTold);                                   // done when it says so (raced on CI)
         Assert.False(engine.IsRerouting);
     }
 

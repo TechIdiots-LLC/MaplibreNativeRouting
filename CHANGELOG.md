@@ -6,6 +6,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- `NavigationEngine.Rerouted` and `RerouteFailed` are raised once the reroute is over: `IsRerouting` was still true in their handlers, and a test that checked it afterwards failed now and then on CI
 - A turn at a junction that keeps to the same road says so: "Turn right to stay on Pinkham Notch Road / NH 16", and "In 400 feet, turn right to stay on …", not "onto" the road already being driven
 - Offline roads are taken from each tile only within the tile itself: tiles carry their roads a little past their edges, each simplified on its own, so the two copies overlapped slightly apart and met at an angle, giving false turns and names flapping at tile edges ("Continue onto White Mountain Road", 35 m, "Continue onto Pinkham Notch Road", 24 m). Now pieces meet end to end at the edge
 - Offline routes keep to the main road rather than hopping through every parking lot beside it: a service road (parking, driveway, gas station) costs three times its time on the motor profiles, and the hybrid profiles no longer weigh a trunk road (often a region's only road, such as NH 16 through Pinkham Notch) by the highway preference on top of its size. Jackson to Pinkham Notch on hybrid moto was NH 16 broken by four detours through service roads; it's NH 16 the whole way

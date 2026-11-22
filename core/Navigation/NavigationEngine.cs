@@ -244,6 +244,8 @@ public sealed class NavigationEngine
         if (DateTime.UtcNow - _lastRerouteAt < Options.MinimumTimeBetweenReroutes) return null;
         if (Interlocked.Exchange(ref _rerouting, 1) == 1) return null;
         _lastRerouteAt = DateTime.UtcNow;
+        DirectionsRoute? route = null;
+        RerouteFailedEventArgs? failed = null;
         try
         {
             using var timeout = new CancellationTokenSource(Options.RerouteTimeout);
@@ -254,33 +256,38 @@ public sealed class NavigationEngine
                 Origin = (from.Lat, from.Lon), Waypoints = [.. options.Waypoints.Skip(StopsPassedBefore + leg)],
                 CancellationToken = timeout.Token, Progress = null,
             };
-            var route = await Task.Run(() => MultiStopRouting.RouteAsync(_engineFor(again.Profile), again)).ConfigureAwait(false);
-            if (route is null)
+            route = await Task.Run(() => MultiStopRouting.RouteAsync(_engineFor(again.Profile), again)).ConfigureAwait(false);
+            if (route is null) failed = new RerouteFailedEventArgs(from, "No route from here");
+            else
             {
-                RerouteFailed?.Invoke(this, new RerouteFailedEventArgs(from, "No route from here"));
-                return null;
+                lock (_gate)
+                {
+                    if (Route is null) route = null;   // stopped meanwhile
+                    else
+                    {
+                        StopsPassedBefore += leg;
+                        _alternatives = [route];
+                        Follow(route, 0);
+                        _detector.Reset((from.Lat, from.Lon));
+                    }
+                }
             }
-            lock (_gate)
-            {
-                if (Route is null) return null;   // stopped meanwhile
-                StopsPassedBefore += leg;
-                _alternatives = [route];
-                Follow(route, 0);
-                _detector.Reset((from.Lat, from.Lon));
-            }
-            Rerouted?.Invoke(this, route);
-            VoiceInstruction?.Invoke(this, SpokenInstructions.Rerouted);
-            return route;
         }
         catch (Exception ex)
         {
-            RerouteFailed?.Invoke(this, new RerouteFailedEventArgs(from,
-                ex is OperationCanceledException ? "Rerouting took too long" : ex.Message, ex));
-            return null;
+            route = null;
+            failed = new RerouteFailedEventArgs(from, ex is OperationCanceledException ? "Rerouting took too long" : ex.Message, ex);
         }
         finally
         {
+            // Done before it's told: a listener to Rerouted / RerouteFailed sees IsRerouting false
             Volatile.Write(ref _rerouting, 0);
         }
+
+        if (failed is not null) { RerouteFailed?.Invoke(this, failed); return null; }
+        if (route is null) return null;
+        Rerouted?.Invoke(this, route);
+        VoiceInstruction?.Invoke(this, SpokenInstructions.Rerouted);
+        return route;
     }
 }

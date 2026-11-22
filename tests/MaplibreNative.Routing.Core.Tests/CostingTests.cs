@@ -160,4 +160,16 @@ public class CostingTests
         var costing = new MvtCostingModel(RouteProfile.HybridOfflineMotorcycle, avoid: avoid);
         Assert.Equal(usable, costing.IsTraversable(roadClass, null, false, surface));
     }
+
+    [Theory]
+    [InlineData("rail")]
+    [InlineData("transit")]
+    [InlineData("raceway")]
+    [InlineData("busway")]
+    [InlineData("bus_guideway")]
+    public void RailwaysAndTheLikeAreNoRoads(string roadClass)
+    {
+        foreach (var profile in Enum.GetValues<RouteProfile>())
+            Assert.False(new MvtCostingModel(profile).IsTraversable(roadClass, null, false), $"{roadClass} by {profile}");
+    }
 }

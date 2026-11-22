@@ -7,6 +7,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- Offline routes no longer run along railways: OpenMapTiles' transportation layer has railways (`rail`, `transit`), raceways and busways with the roads, and any class the costing didn't know was a 30 km/h road. Only roads (and ferries, and the user's trails) are routed on now. Seen when local roads were left out round Holden: 5.1 km of railway
 - `RouteSimulator.Finished` is raised once it has stopped: `IsRunning` was still true in its handlers, and a test checking it failed now and then on CI
 
 ## 0.2.2

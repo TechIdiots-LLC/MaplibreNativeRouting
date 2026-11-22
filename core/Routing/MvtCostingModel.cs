@@ -71,6 +71,8 @@ internal sealed class MvtCostingModel
     public bool IsTraversable(string roadClass, string? subclass, bool accessRestricted, string? surface = null)
     {
         if (accessRestricted) return false;
+        // Roads only: the transportation layer has railways (rail, transit), raceways and busways too
+        if (Array.IndexOf(AllClasses, roadClass) < 0) return false;
         // Left out by the user
         if ((_avoid & TypeOf(roadClass)) != 0) return false;
         if ((_avoid & RoadTypes.Unpaved) != 0 && roadClass != TrailClass && surface is not null && UnpavedSurfaces.Contains(surface))

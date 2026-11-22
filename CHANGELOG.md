@@ -9,6 +9,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- The navigation panel (MAUI and WPF) shows the next maneuver, its arrow and the distance to it ("Turn left onto Milk Street", 540 m). It showed the current step's spoken lead-in, whose distance is the step's whole length ("In 800 m, turn left…" beside a countdown of 480 m), with the current step's arrow (▶ at the start)
 - A simulated drive follows a reroute (MAUI and WPF): it kept driving the old route, so after a closure or leaving the route it left the new one at once, and rerouted again and again
 - `NavigationSession` (MAUI) stops the GPS listener only if it started it: ending navigation stopped it under an app still using it, such as one recording a track. A simulated drive ending no longer starts the GPS for a route that was only planned
 

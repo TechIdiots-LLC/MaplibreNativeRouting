@@ -19,12 +19,13 @@ public partial class NavigationPanelViewModel : ObservableObject
     public void Apply(RouteProgress progress)
     {
         IsNavigating = true;
-        var step = progress.CurrentStep;
-        Instruction = step.VerbalPreInstruction ?? step.Instruction;
+        // The next maneuver, and the distance to it (a step ends where the next begins)
+        var next = progress.UpcomingStep ?? progress.CurrentStep;
+        Instruction = next.Instruction;
         DistanceLabel = FormatDistance(progress.StepDistanceRemainingMeters);
         EtaLabel = FormatDuration(progress.DurationRemainingSeconds);
         TotalDistanceLabel = FormatDistance(progress.DistanceRemainingMeters);
-        ManeuverIcon = GetManeuverIcon(step.Type);
+        ManeuverIcon = GetManeuverIcon(next.Type);
     }
 
     public void SetHighwayWarning(HighwayWarning? warning)

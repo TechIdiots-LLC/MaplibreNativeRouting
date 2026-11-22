@@ -5,7 +5,7 @@
              x:DataType="routing:NavigationPanelViewModel"
              x:Class="MaplibreNative.Routing.Controls.NavigationPanel">
 
-    <Grid RowDefinitions="Auto,Auto" BackgroundColor="#1A1A2E">
+    <Grid RowDefinitions="Auto,Auto,Auto" BackgroundColor="#1A1A2E">
 
         <!-- Highway warning bar -->
         <Border Grid.Row="0"
@@ -23,10 +23,15 @@
             </Grid>
         </Border>
 
-        <!-- Main instruction panel -->
+        <!-- Main instruction panel: tap for the turns after it -->
         <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto"
               Padding="12,10" ColumnSpacing="12"
-              IsVisible="{Binding IsNavigating}">
+              IsVisible="{Binding IsNavigating}"
+              BackgroundColor="Transparent"
+              SemanticProperties.Hint="Shows or hides the rest of the directions">
+            <Grid.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding ToggleDirectionsCommand}" />
+            </Grid.GestureRecognizers>
 
             <!-- Maneuver icon (text-based for now; swap for image in M5 polish) -->
             <Border WidthRequest="48" HeightRequest="48"
@@ -59,8 +64,38 @@
                 <Label Text="{Binding TotalDistanceLabel}"
                        TextColor="#9CA3AF" FontSize="11"
                        HorizontalOptions="End" />
+                <Label Text="{Binding ExpandGlyph}"
+                       TextColor="#9CA3AF" FontSize="11"
+                       HorizontalOptions="End" />
             </VerticalStackLayout>
         </Grid>
+
+        <!-- The turns after the next one, each with the distance from the one before -->
+        <ScrollView Grid.Row="2"
+                    MaximumHeightRequest="320"
+                    IsVisible="{Binding IsDirectionsOpen}">
+            <VerticalStackLayout Padding="12,0,12,10" Spacing="0"
+                                 BindableLayout.ItemsSource="{Binding Directions}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="routing:DirectionItem">
+                        <Grid ColumnDefinitions="48,*,Auto" ColumnSpacing="12" Padding="0,6">
+                            <Label Text="{Binding Icon}"
+                                   TextColor="White" FontSize="18"
+                                   HorizontalOptions="Center" VerticalOptions="Center" />
+                            <Label Grid.Column="1"
+                                   Text="{Binding Instruction}"
+                                   TextColor="#E5E7EB" FontSize="13"
+                                   LineBreakMode="WordWrap"
+                                   VerticalOptions="Center" />
+                            <Label Grid.Column="2"
+                                   Text="{Binding Distance}"
+                                   TextColor="#9CA3AF" FontSize="12"
+                                   VerticalOptions="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+        </ScrollView>
 
     </Grid>
 

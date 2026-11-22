@@ -6,6 +6,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- `RouteSimulator.Finished` is raised once it has stopped: `IsRunning` was still true in its handlers, and a test checking it failed now and then on CI
 
 ## 0.2.2
 ### ✨ Features and improvements

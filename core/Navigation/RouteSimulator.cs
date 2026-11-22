@@ -138,6 +138,8 @@ public sealed class RouteSimulator : IDisposable
                 {
                     if (Next() is not { } fix)
                     {
+                        // Stopped before it says so: a Finished handler sees IsRunning false
+                        Interlocked.CompareExchange(ref _run, null, run);
                         Finished?.Invoke(this, EventArgs.Empty);
                         break;
                     }
@@ -149,7 +151,7 @@ public sealed class RouteSimulator : IDisposable
             catch (OperationCanceledException) { }
             finally
             {
-                if (ReferenceEquals(_run, run)) _run = null;
+                Interlocked.CompareExchange(ref _run, null, run);
                 run.Dispose();
             }
         });

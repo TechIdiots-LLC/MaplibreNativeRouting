@@ -37,10 +37,12 @@ public class RouteSimulatorTests
         var fixes = new List<LocationFix>();
         var done = new TaskCompletionSource();
         sim.LocationChanged += (_, f) => { lock (fixes) fixes.Add(f); };
-        sim.Finished += (_, _) => done.TrySetResult();
+        bool runningWhenFinished = true;
+        sim.Finished += (_, _) => { runningWhenFinished = sim.IsRunning; done.TrySetResult(); };
         sim.Start();
         await done.Task.WaitAsync(TimeSpan.FromSeconds(5));   // 820 m at 200 m/s: 5 s of driving, 0.1 s of real time
         Assert.InRange(fixes.Count, 5, 7);
+        Assert.False(runningWhenFinished);   // stopped when it says so (raced on CI)
         Assert.False(sim.IsRunning);
     }
 }

@@ -6,6 +6,11 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+
+## 0.2.1
+### ✨ Features and improvements
+
+### 🐞 Bug fixes
 - `NavigationEngine.Rerouted` and `RerouteFailed` are raised once the reroute is over: `IsRerouting` was still true in their handlers, and a test that checked it afterwards failed now and then on CI
 - A turn at a junction that keeps to the same road says so: "Turn right to stay on Pinkham Notch Road / NH 16", and "In 400 feet, turn right to stay on …", not "onto" the road already being driven
 - Offline roads are taken from each tile only within the tile itself: tiles carry their roads a little past their edges, each simplified on its own, so the two copies overlapped slightly apart and met at an angle, giving false turns and names flapping at tile edges ("Continue onto White Mountain Road", 35 m, "Continue onto Pinkham Notch Road", 24 m). Now pieces meet end to end at the edge

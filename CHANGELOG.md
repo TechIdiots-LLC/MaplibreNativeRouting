@@ -6,6 +6,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- The way to start is no longer cut off by the first turn: starting close to it, the two are said together ("Head east on Elm Street, then in 60 meters, turn left onto Main Street"); before, the turn's announcement came on the same fix and cut the start off. And VoiceGuidance (MAUI and WPF) waits for an instruction to finish before the next, saying only the newest of any that came meanwhile, rather than cutting it off mid-word
 
 ## 0.2.0
 ### ✨ Features and improvements

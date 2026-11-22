@@ -99,6 +99,33 @@ public class VoiceTests
     }
 
     [Fact]
+    public async Task AStartCloseToTheFirstTurnSaysBothAtOnce()
+    {
+        // 60 m before the left turn: "Head east" and the turn are one instruction, not one cutting the other off
+        var near = new NavigationEngine(new NavigationOptions { Units = DistanceUnits.Metric }, _ => new OneRoute(NearTheTurn()));
+        await near.PlanAsync(new RouteOptions { Origin = (42.35, -71.8407), Destination = (42.36, -71.84), Profile = RouteProfile.OfflineAuto });
+        var said = new List<string>();
+        near.VoiceInstruction += (_, t) => said.Add(t);
+        foreach (var fix in RouteSimulator.ForRoute(near.Route!).All()) near.UpdateLocation(fix);
+        Assert.StartsWith("Head east on Elm Street, then ", said[0]);
+        Assert.EndsWith("turn left onto Main Street", said[0]);
+        Assert.DoesNotContain("Head east on Elm Street", said.Skip(1));
+    }
+
+    private static DirectionsRoute NearTheTurn()
+    {
+        (double Lon, double Lat)[] shape = [(-71.8407, 42.35), (-71.84, 42.35), (-71.84, 42.355), (-71.84, 42.36)];
+        var steps = new List<LegStep>
+        {
+            new() { Type = ManeuverType.Start, BeginShapeIndex = 0, EndShapeIndex = 1, Distance = 57, Duration = 5, Instruction = "Head east on Elm Street" },
+            new() { Type = ManeuverType.Left, BeginShapeIndex = 1, EndShapeIndex = 3, Distance = 1110, Duration = 160, Instruction = "Turn left onto Main Street" },
+            new() { Type = ManeuverType.Destination, BeginShapeIndex = 3, EndShapeIndex = 3, Instruction = "Arrive" },
+        };
+        var leg = new RouteLeg { Distance = 1167, Duration = 165, Steps = steps, Shape = shape };
+        return new DirectionsRoute { Distance = leg.Distance, Duration = leg.Duration, Legs = [leg] };
+    }
+
+    [Fact]
     public void GoingStraightOnIntoANewNameIsSaidOnceAsItsReached()
     {
         var l = TestRoutes.L();
@@ -113,8 +140,8 @@ public class VoiceTests
         Assert.Equal(["Continue onto Main Street"], said);
     }
 
-    private sealed class OneRoute : Routing.IRoutingEngine
+    private sealed class OneRoute(DirectionsRoute? route = null) : Routing.IRoutingEngine
     {
-        public Task<DirectionsRoute?> RouteAsync(RouteOptions o) => Task.FromResult<DirectionsRoute?>(TestRoutes.L());
+        public Task<DirectionsRoute?> RouteAsync(RouteOptions o) => Task.FromResult<DirectionsRoute?>(route ?? TestRoutes.L());
     }
 }

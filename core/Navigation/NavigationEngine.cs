@@ -38,6 +38,8 @@ public sealed class NavigationEngine
     private DateTime _lastRerouteAt = DateTime.MinValue;
     private bool _arrived;
     private bool _departed;
+    // The way to start, waiting for the first fix's turn announcement to go with it (UpdateLocation's thread only)
+    private string? _departure;
     private int _legIndex;
     private int _rerouting;
 
@@ -150,7 +152,11 @@ public sealed class NavigationEngine
         _announcer.AnnouncementNeeded += (s, e) =>
         {
             AnnouncementNeeded?.Invoke(this, e);
-            if (e.Text.Length > 0) VoiceInstruction?.Invoke(this, e.Text);
+            if (e.Text.Length == 0) return;
+            // A turn already due at the start is said with the way to start, not straight after it (which cut it off)
+            var text = _departure is { } start ? $"{start}, then {char.ToLowerInvariant(e.Text[0])}{e.Text[1..]}" : e.Text;
+            _departure = null;
+            VoiceInstruction?.Invoke(this, text);
         };
         _detector.Reset();
     }
@@ -188,8 +194,13 @@ public sealed class NavigationEngine
             VoiceInstruction?.Invoke(this, $"You have reached stop {reachedStop + 1}");
         }
         if (departing && !progress.HasArrived && progress.CurrentLeg.Steps.Count > 0)
-            VoiceInstruction?.Invoke(this, SpokenInstructions.Say(progress.CurrentStep));
+            _departure = SpokenInstructions.Say(progress.CurrentStep);
         announcer?.Update(progress);
+        if (_departure is { } departure)
+        {
+            _departure = null;
+            VoiceInstruction?.Invoke(this, departure);
+        }
         if (arrivedNow)
         {
             Arrived?.Invoke(this, progress);

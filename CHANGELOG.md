@@ -6,6 +6,7 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- Offline MVT routing finds routes: roads in vector tiles mostly share no vertex where they meet (simplifying drops the junction's node, a road ending on another stops beside it, and tile edges cut roads mid-segment), so the road graph fell into thousands of pieces and A* found no path. `RoadJunctions` now puts a shared node where two roads on the same level cross and puts an end lying on another road onto it, leaving bridges, tunnels and other `layer`s apart; graph nodes are keyed by rounded coordinates. On real OpenMapTiles tiles a Holden→Paxton graph went from 3,725 pieces (largest 11%) to one holding 96% of the roads
 - Offline MVT routing reads gzipped tiles: `TileProvider` asks for and unpacks compressed responses, and `MvtDecoder` unpacks a tile that arrives still gzipped (a cache provider's, or a server that sends PMTiles archives' tiles so regardless). A server sending them gzipped, as PMTiles servers do, gave a graph with no roads
 - Tests for Core (`tests/MaplibreNative.Routing.Core.Tests`), run by CI
 

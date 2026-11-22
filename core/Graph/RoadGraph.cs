@@ -40,7 +40,8 @@ public sealed class RoadGraph
 
         int GetOrCreateNode(double lat, double lon)
         {
-            var key = ((long)(lat * CoordScale), (long)(lon * CoordScale));
+            // Rounded, not truncated: one point worked out from two tiles' grids differs in its last bits
+            var key = ((long)Math.Round(lat * CoordScale), (long)Math.Round(lon * CoordScale));
             if (coordToId.TryGetValue(key, out int existingId))
                 return existingId;
 

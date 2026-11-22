@@ -31,7 +31,7 @@ internal static class MvtGraphBuilder
         }
 
         progress?.Report("Building road graph…");
-        return RoadGraph.Build(segments, costing);
+        return RoadGraph.Build(RoadJunctions.Connect(segments), costing);
     }
 
     public static async Task<RoadGraph> BuildExpandedAsync(
@@ -57,7 +57,7 @@ internal static class MvtGraphBuilder
         }
 
         progress?.Report("Building road graph…");
-        return RoadGraph.Build(segments, costing);
+        return RoadGraph.Build(RoadJunctions.Connect(segments), costing);
     }
 
     private static void ExtractSegments(MvtTile mvtTile, TileCoord coord, List<MvtRoadSegment> segments)
@@ -82,6 +82,7 @@ internal static class MvtGraphBuilder
             string? subclass = props.TryGetValue("subclass", out var sc) ? sc.ToString() : null;
             string? surface = props.TryGetValue("surface", out var sf) ? sf.ToString() : null;
             string? brunnel = props.TryGetValue("brunnel", out var br) ? br.ToString() : null;
+            int layer = props.TryGetValue("layer", out var ly) ? Convert.ToInt32(ly) : 0;
 
             int oneway = 0;
             if (props.TryGetValue("oneway", out var ow))
@@ -112,6 +113,7 @@ internal static class MvtGraphBuilder
                     Oneway = oneway,
                     Surface = surface,
                     Brunnel = brunnel,
+                    Layer = layer,
                     Toll = toll,
                     Ramp = ramp,
                     AccessRestricted = access,

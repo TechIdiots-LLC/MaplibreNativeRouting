@@ -8,6 +8,8 @@ internal sealed class MvtRoadSegment
     public int Oneway { get; init; }
     public string? Surface { get; init; }
     public string? Brunnel { get; init; }
+    /// <summary>OpenMapTiles' layer: which of roads drawn over each other it is (0 at ground).</summary>
+    public int Layer { get; init; }
     public bool Toll { get; init; }
     public bool Ramp { get; init; }
     public bool AccessRestricted { get; init; }

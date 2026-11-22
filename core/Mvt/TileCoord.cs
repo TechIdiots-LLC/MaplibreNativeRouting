@@ -23,7 +23,10 @@ public readonly record struct TileCoord(int Z, int X, int Y)
         return (north, south, west, east);
     }
 
-    public (double Lat, double Lon) FeatureToLatLon(int fx, int fy, uint extent)
+    public (double Lat, double Lon) FeatureToLatLon(int fx, int fy, uint extent) => FeatureToLatLon((double)fx, fy, extent);
+
+    /// <summary>A point in tile units, which may fall between them (a line clipped at the tile's edge).</summary>
+    public (double Lat, double Lon) FeatureToLatLon(double fx, double fy, uint extent)
     {
         int n = 1 << Z;
         double lonFrac = (double)fx / extent;

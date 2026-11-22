@@ -108,15 +108,18 @@ internal static class MvtGraphBuilder
             foreach (var ring in feature.Geometry)
             {
                 if (ring.Count < 2) continue;
+                var named = names.Find(ring, roadClass, transportLayer.Extent);
 
-                var coords = new List<(double Lon, double Lat)>(ring.Count);
-                foreach (var (fx, fy) in ring)
+                // The tile's own part of the line: past its edge, the neighbouring tile has the road, simplified on
+                // its own, so the two overlapped a little apart and met at an angle (false turns, names flapping)
+                foreach (var part in ClipToTile(ring, transportLayer.Extent))
+                {
+                var coords = new List<(double Lon, double Lat)>(part.Count);
+                foreach (var (fx, fy) in part)
                 {
                     var (lat, lon) = coord.FeatureToLatLon(fx, fy, transportLayer.Extent);
                     coords.Add((lon, lat));
                 }
-
-                var named = names.Find(ring, roadClass, transportLayer.Extent);
 
                 segments.Add(new MvtRoadSegment
                 {
@@ -134,8 +137,41 @@ internal static class MvtGraphBuilder
                     Ref = named?.Ref,
                     FeatureId = feature.Id,
                 });
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// The parts of a tile's line within the tile itself (0 to <paramref name="extent"/> both ways), split where it
+    /// leaves and comes back; tiles carry their features a little past their edges (Liang–Barsky clipping).
+    /// </summary>
+    internal static List<List<(double X, double Y)>> ClipToTile(IReadOnlyList<(int X, int Y)> line, double extent)
+    {
+        var parts = new List<List<(double X, double Y)>>();
+        List<(double X, double Y)>? current = null;
+        for (int i = 1; i < line.Count; i++)
+        {
+            double x0 = line[i - 1].X, y0 = line[i - 1].Y, dx = line[i].X - x0, dy = line[i].Y - y0;
+            double t0 = 0, t1 = 1;
+            bool Keep(double p, double q)
+            {
+                if (p == 0) return q >= 0;
+                double r = q / p;
+                if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+                else { if (r < t0) return false; if (r < t1) t1 = r; }
+                return true;
+            }
+            if (!(Keep(-dx, x0) && Keep(dx, extent - x0) && Keep(-dy, y0) && Keep(dy, extent - y0)) || t1 <= t0)
+            {
+                current = null;
+                continue;
+            }
+            if (current is null || t0 > 0) parts.Add(current = [(x0 + t0 * dx, y0 + t0 * dy)]);   // in from outside
+            current.Add((x0 + t1 * dx, y0 + t1 * dy));
+            if (t1 < 1) current = null;   // out again
+        }
+        return parts;
     }
 
     /// <summary>

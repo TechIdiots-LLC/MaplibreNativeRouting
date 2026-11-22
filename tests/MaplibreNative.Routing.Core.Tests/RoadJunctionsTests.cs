@@ -72,4 +72,16 @@ public class RoadJunctionsTests
         Assert.Equal(3, Pieces(roads));
         Assert.Equal(1, Pieces(RoadJunctions.Connect(roads)));
     }
+
+    [Fact]
+    public void ATilesLinesAreClippedToTheTileItself()
+    {
+        // In from the margin, across, out past the right edge, back in, and a piece only in the margin
+        var parts = Routing.MvtGraphBuilder.ClipToTile([(-100, 100), (200, 100), (200, 4200), (300, 4200), (300, 3000)], 4096);
+        Assert.Equal(2, parts.Count);
+        Assert.Equal([(0.0, 100.0), (200.0, 100.0), (200.0, 4096.0)], parts[0]);
+        Assert.Equal([(300.0, 4096.0), (300.0, 3000.0)], parts[1]);
+        Assert.Empty(Routing.MvtGraphBuilder.ClipToTile([(-50, 10), (-10, 20)], 4096));
+        Assert.Single(Routing.MvtGraphBuilder.ClipToTile([(10, 10), (20, 20), (30, 10)], 4096));
+    }
 }

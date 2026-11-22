@@ -3,10 +3,15 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
-- `RouteOptions.AvoidRoads` (`RoadTypes` flags): kinds of road not to use at all, for a route planner's road choices: highways, main roads, local roads, service roads, tracks, paths, anything unpaved, ferries. Offline routing leaves out any of them; a Valhalla request highways, unpaved roads and ferries (and tracks by car), which is all Valhalla can leave out. The user's trails are always used
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+
+## 0.3.0
+### ✨ Features and improvements
+- `RouteOptions.AvoidRoads` (`RoadTypes` flags): kinds of road not to use at all, for a route planner's road choices: highways, main roads, local roads, service roads, tracks, paths, anything unpaved, ferries. Offline routing leaves out any of them; a Valhalla request highways, unpaved roads and ferries (and tracks by car), which is all Valhalla can leave out. The user's trails are always used
+
+### 🐞 Bug fixes
 - Offline routes no longer run along railways: OpenMapTiles' transportation layer has railways (`rail`, `transit`), raceways and busways with the roads, and any class the costing didn't know was a 30 km/h road. Only roads (and ferries, and the user's trails) are routed on now. Seen when local roads were left out round Holden: 5.1 km of railway
 - `RouteSimulator.Finished` is raised once it has stopped: `IsRunning` was still true in its handlers, and a test checking it failed now and then on CI
 

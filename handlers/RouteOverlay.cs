@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using MapLibreNative.Maui.Handlers;
 using MaplibreNative.Routing.Core.Models;
+using MaplibreNative.Routing.Core.Routing;
 using MaplibreNative.Routing.Core.Utils;
 
 namespace MaplibreNative.Routing;
@@ -20,6 +21,9 @@ public class RouteOverlay
     private const string HighwayLayerId  = "routing-highway-line";
     private const string PositionSourceId = "routing-position-src";
     private const string PositionLayerId  = "routing-position";
+    private const string WaypointSourceId = "routing-waypoints-src";
+    private const string WaypointLayerId  = "routing-waypoints";
+    private const string WaypointLabelId  = "routing-waypoint-labels";
 
     private IMapLibreMapController? _controller;
     private readonly HashSet<string> _activeLayers = [];
@@ -120,6 +124,60 @@ public class RouteOverlay
         }
     }
 
+    /// <summary>
+    /// The points a route is planned through: the origin green ("A"), stops amber (numbered), the destination red
+    /// ("B"). The labels need the style's glyphs; without them the circles still show. Null, or none, removes them.
+    /// </summary>
+    public void ShowWaypoints(RouteWaypoints? waypoints)
+    {
+        if (_controller is null) return;
+        if (waypoints is null || waypoints.Count == 0)
+        {
+            try { _controller.RemoveLayer(WaypointLabelId); } catch { }
+            _activeLayers.Remove(WaypointLabelId);
+            TryRemove(WaypointLayerId, WaypointSourceId);
+            return;
+        }
+        var sb = new System.Text.StringBuilder("{\"type\":\"FeatureCollection\",\"features\":[");
+        for (int i = 0; i < waypoints.Count; i++)
+        {
+            var (lat, lon) = waypoints.Points[i];
+            var kind = waypoints.KindOf(i);
+            string label = kind switch { WaypointKind.Origin => "A", WaypointKind.Destination => "B", _ => i.ToString(CultureInfo.InvariantCulture) };
+            if (i > 0) sb.Append(',');
+            sb.Append(string.Create(CultureInfo.InvariantCulture,
+                $"{{\"type\":\"Feature\",\"properties\":{{\"index\":{i},\"kind\":\"{kind.ToString().ToLowerInvariant()}\",\"label\":\"{label}\"}},\"geometry\":{{\"type\":\"Point\",\"coordinates\":[{lon:F6},{lat:F6}]}}}}"));
+        }
+        sb.Append("]}");
+        try
+        {
+            SetOrAddSource(WaypointSourceId, WaypointLayerId, sb.ToString(), new Dictionary<string, object?>
+            {
+                ["circle-radius"]       = 11.0,
+                ["circle-color"]        = new object[] { "match", new object[] { "get", "kind" }, "origin", "#22AA22", "destination", "#CC2222", "#F9A825" },
+                ["circle-stroke-color"] = "#FFFFFF",
+                ["circle-stroke-width"] = 2.5,
+            }, circle: true);
+            if (!_activeLayers.Contains(WaypointLabelId))
+            {
+                _controller.AddSymbolLayer(WaypointLabelId, WaypointSourceId, belowLayerId: null, sourceLayer: null,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["text-field"]            = new object[] { "get", "label" },
+                        ["text-size"]             = 12.0,
+                        ["text-color"]            = "#FFFFFF",
+                        ["text-allow-overlap"]    = true,
+                        ["text-ignore-placement"] = true,
+                    });
+                _activeLayers.Add(WaypointLabelId);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[RouteOverlay] ShowWaypoints threw: {ex}");
+        }
+    }
+
     public void ClearRoute()
     {
         if (_controller is null) return;
@@ -147,8 +205,10 @@ public class RouteOverlay
             try { _controller!.RemoveSource(sourceId); } catch { }
 
             _controller!.AddGeoJsonSource(sourceId, geoJson);
-            // A route line added after the position marker goes below it, so the marker stays on top
-            string? below = !circle && _activeLayers.Contains(PositionLayerId) ? PositionLayerId : null;
+            // A route line goes below the markers (the stops, the position), so they stay on top
+            string? below = circle ? null
+                : _activeLayers.Contains(WaypointLayerId) ? WaypointLayerId
+                : _activeLayers.Contains(PositionLayerId) ? PositionLayerId : null;
             if (circle)
                 _controller.AddCircleLayer(layerId, sourceId, belowLayerId: null, sourceLayer: null, properties: paint);
             else

@@ -21,6 +21,7 @@ A .NET MAUI navigation and routing plugin for [MapLibre Native](https://github.c
 - **Rerouting** — notices when you leave the route (too far from it, or heading away from the next turn) and plans a new one from where you are
 - **Simulated drives** — drive a route, or any other line, as fake GPS to try navigation and rerouting without going anywhere
 - **Turn-by-turn navigation** — `RouteProgressTracker` snaps GPS to route shape and advances steps
+- **Stops on the way** — routes through stops, planned leg by leg; `RouteWaypoints` edits them as a user plans (a stop put on the route goes between the stops of its leg), and the overlay draws them; reaching each is announced
 - **Following camera** — the map follows you, turned to the road ahead and tilted, zoomed to show the next turn; pausing when you pan, with recenter and an overview of the rest of the route
 - **Spoken instructions** — "In 400 feet, turn left onto Main Street, Route 122A", spoken through the platform's text-to-speech when `session.Voice.IsEnabled` is set; announced about 60, 15 and 4 seconds before each turn (never nearer than 1000, 200 and 30 m), in metric, imperial or UK units
 - **Highway warnings** — detects motorway/trunk segments and surfaces a dismissible warning bar
@@ -108,6 +109,25 @@ never nearer than 1000, 200 and 30 m ("In 0.5 miles, turn left onto Pleasant Str
 miles…", then "Turn left onto Pleasant Street, Route 122"). Going straight on into a new street name is said once, as
 it's reached. The start ("Head southwest on Maple Street"), a new route and the arrival are said too. Distances
 are rounded as a driver hears them, in the region's units unless `NavigationOptions.Units` says otherwise.
+
+## Stops on the way
+
+```csharp
+var points = new RouteWaypoints();
+points.SetOrigin((42.352, -71.863));
+points.SetDestination((42.311, -71.928));
+points.AddStop((42.33, -71.90));                 // goes where it lengthens the trip least
+await session.StartAsync(points.ApplyTo(new RouteOptions { Origin = default, Destination = default, Profile = RouteProfile.OfflineAuto, MvtTileJsonUrl = tiles }));
+overlay.ShowWaypoints(points);                   // A, 1, 2… B
+
+// A long-press on the route line puts a stop between the stops of the leg it falls on
+double tolerance = MapTapTolerance.Meters(controller, e.LatLng.Latitude);
+points.InsertOnRoute((e.LatLng.Latitude, e.LatLng.Longitude), session.ActiveRoute!, tolerance);
+```
+
+`RouteOptions.Waypoints` are the stops between the origin and the destination; the route has a leg to each.
+`WaypointReached` (and "You have reached stop 1") marks each as it's reached; a reroute keeps only the stops still
+ahead. The editing model is maplibre-gl-directions'.
 
 ## Following camera
 

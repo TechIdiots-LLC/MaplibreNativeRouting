@@ -38,6 +38,7 @@ public sealed class NavigationEngine
     private DateTime _lastRerouteAt = DateTime.MinValue;
     private bool _arrived;
     private bool _departed;
+    private int _legIndex;
     private int _rerouting;
 
     public NavigationEngine(NavigationOptions? options = null, Func<RouteProfile, IRoutingEngine>? engineFor = null)
@@ -75,14 +76,23 @@ public sealed class NavigationEngine
     /// turn left onto Main Street"), "Route recalculated" after a reroute, and the arrival.
     /// </summary>
     public event EventHandler<string>? VoiceInstruction;
+    /// <summary>A stop on the way (<see cref="RouteOptions.Waypoints"/>) is reached: its index among them.</summary>
+    public event EventHandler<int>? WaypointReached;
 
-    /// <summary>Plans up to <paramref name="maxRoutes"/> routes, shortest first, and follows the first.</summary>
+    /// <summary>
+    /// Plans up to <paramref name="maxRoutes"/> routes, shortest first, and follows the first. A route through stops
+    /// (<see cref="RouteOptions.Waypoints"/>) is planned leg by leg, without alternatives.
+    /// </summary>
     public async Task<IReadOnlyList<DirectionsRoute>> PlanAsync(RouteOptions options, int maxRoutes = 1)
     {
-        var routes = await _engineFor(options.Profile).FindAlternativesAsync(options, maxRoutes).ConfigureAwait(false);
+        var engine = _engineFor(options.Profile);
+        IReadOnlyList<DirectionsRoute> routes = options.Waypoints.Count > 0
+            ? await MultiStopRouting.RouteAsync(engine, options).ConfigureAwait(false) is { } through ? [through] : []
+            : await engine.FindAlternativesAsync(options, maxRoutes).ConfigureAwait(false);
         lock (_gate)
         {
             RouteOptions = options;
+            StopsPassedBefore = 0;
             _alternatives = [.. routes];
             if (_alternatives.Count > 0) Follow(_alternatives[0], 0);
             else Route = null;
@@ -96,6 +106,7 @@ public sealed class NavigationEngine
         lock (_gate)
         {
             RouteOptions = options ?? RouteOptions;
+            StopsPassedBefore = 0;
             _alternatives = [route];
             Follow(route, 0);
         }
@@ -123,6 +134,9 @@ public sealed class NavigationEngine
         }
     }
 
+    /// <summary>Stops reached before the route being followed began (it was planned again from past them).</summary>
+    private int StopsPassedBefore { get; set; }
+
     private void Follow(DirectionsRoute route, int index)
     {
         Route = route;
@@ -130,6 +144,7 @@ public sealed class NavigationEngine
         Progress = null;
         _arrived = false;
         _departed = false;
+        _legIndex = 0;
         _tracker = new RouteProgressTracker(route);
         _announcer = new ManeuverAnnouncerHelper(Distances);
         _announcer.AnnouncementNeeded += (s, e) =>
@@ -145,6 +160,7 @@ public sealed class NavigationEngine
     {
         RouteProgress progress;
         bool arrivedNow, offRoute, departing;
+        int reachedStop = -1;
         ManeuverAnnouncerHelper? announcer;
         lock (_gate)
         {
@@ -153,6 +169,11 @@ public sealed class NavigationEngine
             Progress = progress;
             departing = !_departed;
             _departed = true;
+            if (progress.CurrentLegIndex > _legIndex)
+            {
+                reachedStop = progress.CurrentLegIndex - 1 + StopsPassedBefore;
+                _legIndex = progress.CurrentLegIndex;
+            }
             announcer = _announcer;
             arrivedNow = progress.HasArrived && !_arrived;
             if (arrivedNow) _arrived = true;
@@ -161,6 +182,11 @@ public sealed class NavigationEngine
         }
 
         ProgressUpdated?.Invoke(this, progress);
+        if (reachedStop >= 0)
+        {
+            WaypointReached?.Invoke(this, reachedStop);
+            VoiceInstruction?.Invoke(this, $"You have reached stop {reachedStop + 1}");
+        }
         if (departing && !progress.HasArrived && progress.CurrentLeg.Steps.Count > 0)
             VoiceInstruction?.Invoke(this, SpokenInstructions.Say(progress.CurrentStep));
         announcer?.Update(progress);
@@ -192,8 +218,14 @@ public sealed class NavigationEngine
         try
         {
             using var timeout = new CancellationTokenSource(Options.RerouteTimeout);
-            var again = options with { Origin = (from.Lat, from.Lon), CancellationToken = timeout.Token, Progress = null };
-            var route = await Task.Run(() => _engineFor(again.Profile).RouteAsync(again)).ConfigureAwait(false);
+            // Through the stops not yet reached
+            int leg = Progress?.CurrentLegIndex ?? 0;
+            var again = options with
+            {
+                Origin = (from.Lat, from.Lon), Waypoints = [.. options.Waypoints.Skip(StopsPassedBefore + leg)],
+                CancellationToken = timeout.Token, Progress = null,
+            };
+            var route = await Task.Run(() => MultiStopRouting.RouteAsync(_engineFor(again.Profile), again)).ConfigureAwait(false);
             if (route is null)
             {
                 RerouteFailed?.Invoke(this, new RerouteFailedEventArgs(from, "No route from here"));
@@ -202,6 +234,7 @@ public sealed class NavigationEngine
             lock (_gate)
             {
                 if (Route is null) return null;   // stopped meanwhile
+                StopsPassedBefore += leg;
                 _alternatives = [route];
                 Follow(route, 0);
                 _detector.Reset((from.Lat, from.Lon));

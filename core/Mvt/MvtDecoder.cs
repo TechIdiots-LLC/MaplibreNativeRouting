@@ -31,6 +31,16 @@ internal static class MvtDecoder
 {
     public static MvtTile Decode(ReadOnlySpan<byte> data)
     {
+        // A tile still gzipped (from a cache provider, or a server that sends it so regardless): unpack it first
+        if (data.Length > 2 && data[0] == 0x1f && data[1] == 0x8b)
+        {
+            using var gz = new System.IO.Compression.GZipStream(
+                new MemoryStream(data.ToArray()), System.IO.Compression.CompressionMode.Decompress);
+            using var plain = new MemoryStream();
+            gz.CopyTo(plain);
+            return Decode(plain.ToArray().AsSpan());
+        }
+
         var tile = new MvtTile();
         var reader = new ProtobufReader(data);
         while (reader.HasMore)

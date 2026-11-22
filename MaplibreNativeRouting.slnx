@@ -8,4 +8,7 @@
   <Folder Name="/wpf/">
     <Project Path="wpf/MaplibreNative.Routing.Wpf.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MaplibreNative.Routing.Core.Tests/MaplibreNative.Routing.Core.Tests.csproj" />
+  </Folder>
 </Solution>

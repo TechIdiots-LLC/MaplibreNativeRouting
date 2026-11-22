@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="MaplibreNative.Routing.Core.Tests" />
   </ItemGroup>
 
 </Project>

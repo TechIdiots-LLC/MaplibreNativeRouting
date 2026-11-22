@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
 using MaplibreNative.Routing.Core.Utils;
 
@@ -10,7 +11,12 @@ internal sealed class TileProvider : IDisposable
     private const int DefaultMaxCacheSize = 500;
     private const int MaxConcurrentDownloads = 6;
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
+    // Tile servers commonly send tiles gzipped whether or not the client asked (PMTiles archives store them so)
+    private static readonly HttpClient Http = new(new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+    })
+    { Timeout = TimeSpan.FromSeconds(30) };
 
     private readonly string _urlTemplate;
     private readonly int _maxCacheSize;

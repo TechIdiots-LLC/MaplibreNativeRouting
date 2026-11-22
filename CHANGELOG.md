@@ -6,6 +6,8 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- Offline MVT routing reads gzipped tiles: `TileProvider` asks for and unpacks compressed responses, and `MvtDecoder` unpacks a tile that arrives still gzipped (a cache provider's, or a server that sends PMTiles archives' tiles so regardless). A server sending them gzipped, as PMTiles servers do, gave a graph with no roads
+- Tests for Core (`tests/MaplibreNative.Routing.Core.Tests`), run by CI
 
 ## 0.0.13
 ### ✨ Features and improvements

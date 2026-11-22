@@ -67,6 +67,9 @@ jobs:
       - name: Build core
         run: dotnet build core/MaplibreNative.Routing.Core.csproj -c Release
 
+      - name: Test core
+        run: dotnet test tests/MaplibreNative.Routing.Core.Tests -c Release
+
       - name: Build handlers (Windows)
         run: dotnet build handlers/MaplibreNative.Routing.csproj -c Release -f net10.0-windows10.0.19041.0
 

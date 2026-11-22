@@ -71,7 +71,7 @@ public sealed class MvtRouter : IRoutingEngine
         foreach (var edge in path)
         {
             totalDistance += edge.DistanceMeters;
-            totalDuration += edge.Cost;
+            totalDuration += edge.TravelSeconds;
         }
 
         string summary = steps.Count > 0 && steps[0].StreetNames.Count > 0

@@ -144,7 +144,7 @@ internal static class MvtManeuverGenerator
                 BeginShapeIndex = beginIdx,
                 EndShapeIndex = endIdx,
                 Distance = edge.DistanceMeters,
-                Duration = edge.Cost,
+                Duration = edge.TravelSeconds,
                 StreetName = edge.StreetName,
                 Ref = edge.Ref,
                 RoadClass = edge.RoadClass,

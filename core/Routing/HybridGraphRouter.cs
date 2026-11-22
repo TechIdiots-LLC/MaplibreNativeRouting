@@ -91,7 +91,7 @@ public sealed class HybridGraphRouter : IRoutingEngine
         var (steps, shape) = MvtManeuverGenerator.Generate(path, graph);
         double distance = path.Sum(e => e.DistanceMeters);
         // The time, not the preference-weighted cost: what the user will spend
-        double duration = path.Sum(e => e.SpeedKmh > 0 ? e.DistanceMeters / (e.SpeedKmh / 3.6) : 0);
+        double duration = path.Sum(e => e.TravelSeconds);
         double trail = path.Where(e => e.RoadClass == MvtCostingModel.TrailClass).Sum(e => e.DistanceMeters);
         var leg = new RouteLeg
         {

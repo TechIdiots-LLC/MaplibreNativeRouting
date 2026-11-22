@@ -31,6 +31,9 @@ internal sealed class MvtCostingModel
 
     private bool IsHybridMoto => _profile is RouteProfile.HybridOfflineMotorcycle or RouteProfile.HybridMotorcycle;
     private bool IsHybridBike => _profile is RouteProfile.HybridOfflineBicycle or RouteProfile.HybridBicycle;
+    private bool IsMotor => IsHybridMoto || _profile is RouteProfile.OfflineAuto or RouteProfile.Auto
+                                                    or RouteProfile.Motorcycle;
+    private const double ServiceFactor = 3;
 
     /// <summary>
     /// How much more a metre of a road costs than its time, on the hybrid profiles: the user's trails are the way,
@@ -171,8 +174,15 @@ internal sealed class MvtCostingModel
 
         double baseSeconds = distanceMeters / (speedKmh / 3.6);
 
-        if (roadClass is "motorway" or "trunk")
+        // Highways avoided as asked. A trunk is often a region's only two-lane road (NH 16 through Pinkham Notch):
+        // the hybrid profiles weigh it by size already (Preference), so only their motorways are avoided twice
+        if (roadClass is "motorway" || (roadClass is "trunk" && !IsHybridMoto && !IsHybridBike))
             baseSeconds *= 1.0 + (1.0 - _useHighways) * 9.0;
+
+        // A service road (parking, a driveway, a gas station) is a way in or out, not a way through: cheaper than the
+        // road beside it, a route hopped through every parking lot along it
+        if (roadClass is "service" && IsMotor)
+            baseSeconds *= ServiceFactor;
 
         if (roadClass is "ferry")
             baseSeconds *= 1.0 + (1.0 - _useFerry) * 9.0;

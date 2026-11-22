@@ -6,6 +6,8 @@
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- Offline routes keep to the main road rather than hopping through every parking lot beside it: a service road (parking, driveway, gas station) costs three times its time on the motor profiles, and the hybrid profiles no longer weigh a trunk road (often a region's only road, such as NH 16 through Pinkham Notch) by the highway preference on top of its size. Jackson to Pinkham Notch on hybrid moto was NH 16 broken by four detours through service roads; it's NH 16 the whole way
+- Offline routes' and steps' durations are the driving time; they were the routing cost, preferences and all (10.4 km in 62 minutes)
 - The way to start is no longer cut off by the first turn: starting close to it, the two are said together ("Head east on Elm Street, then in 60 meters, turn left onto Main Street"); before, the turn's announcement came on the same fix and cut the start off. And VoiceGuidance (MAUI and WPF) waits for an instruction to finish before the next, saying only the newest of any that came meanwhile, rather than cutting it off mid-word
 
 ## 0.2.0

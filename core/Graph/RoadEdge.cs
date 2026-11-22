@@ -17,6 +17,8 @@ public sealed class RoadEdge
     public bool IsBridge { get; }
     public bool IsTunnel { get; }
     public double SpeedKmh { get; }
+    /// <summary>The time to drive it at <see cref="SpeedKmh"/>: what a route's durations are made of (not <see cref="Cost"/>, which weighs preferences in).</summary>
+    public double TravelSeconds => SpeedKmh > 0 ? DistanceMeters / (SpeedKmh / 3.6) : 0;
 
     public IReadOnlyList<(double Lon, double Lat)> IntermediatePoints { get; }
 

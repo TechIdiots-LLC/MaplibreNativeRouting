@@ -3,13 +3,18 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
+
+### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+## 0.2.0
+### ✨ Features and improvements
 - Tap the navigation panel (click, on WPF) for the rest of the directions: the turns after the next one, each with its arrow and the distance from the turn before, to the destination, scrolling past 320 pixels. Tap again to close; ▾/▴ in the corner shows which. The list changes only at a new step or route, not on every fix
 - `NavigationSession.PlanAsync` plans and draws the routes without the GPS, to choose one before setting off, and `FollowAsync` then follows it (`StartAsync` is the two together). An app planning a ride away from its start no longer has it rerouted at once from where the device is, and Start no longer has to plan again
 - The offline routers load the tiles along the trip, not the box round it: those within 30% of the trip's length (at least 5 km) of the straight line from origin to destination (`TileCoord.CoverCorridor`). A 136 km diagonal trip (Vermont to New Hampshire) is 5,547 tiles where the box was 9,016. The width is now in metres east-west too; it was in degrees of latitude, narrower than meant away from the equator
 - Tile download progress is reported about every 2%, not every tile (a long trip reported 9,000 times)
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
 - The navigation panel (MAUI and WPF) shows the next maneuver, its arrow and the distance to it ("Turn left onto Milk Street", 540 m). It showed the current step's spoken lead-in, whose distance is the step's whole length ("In 800 m, turn left…" beside a countdown of 480 m), with the current step's arrow (▶ at the start)
 - A simulated drive follows a reroute (MAUI and WPF): it kept driving the old route, so after a closure or leaving the route it left the new one at once, and rerouted again and again
 - `NavigationSession` (MAUI) stops the GPS listener only if it started it: ending navigation stopped it under an app still using it, such as one recording a track. A simulated drive ending no longer starts the GPS for a route that was only planned

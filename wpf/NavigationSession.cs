@@ -24,6 +24,7 @@ public class NavigationSession : IAsyncDisposable
     private readonly NavigationEngine _engine;
     private readonly SynchronizationContext? _ui;
     private RouteSimulator? _simulator;
+    private bool _simulatingRoute;     // the simulator drives the active route, so follows a reroute
 
     public event EventHandler<RouteProgress>? ProgressUpdated;
     public event EventHandler<ManeuverAnnouncementEventArgs>? AnnouncementNeeded;
@@ -62,6 +63,8 @@ public class NavigationSession : IAsyncDisposable
         _engine.Rerouted += (_, route) => OnUi(() =>
         {
             _overlay.ShowRoute(route);
+            // A drive of the route goes on along the new one, from where it left the old
+            if (_simulator is { } sim && _simulatingRoute) RunSimulator(route, sim.SpeedFactor);
             Rerouted?.Invoke(this, route);
         });
     }
@@ -108,6 +111,13 @@ public class NavigationSession : IAsyncDisposable
     {
         var route = path ?? _engine.Route;
         if (route is null) return;
+        _simulatingRoute = path is null;
+        RunSimulator(route, speedFactor);
+    }
+
+    /// <summary>A simulator driving <paramref name="route"/> in place of the last.</summary>
+    private void RunSimulator(DirectionsRoute route, double speedFactor)
+    {
         StopSimulation();
         var sim = RouteSimulator.ForRoute(route);
         sim.SpeedFactor = speedFactor;

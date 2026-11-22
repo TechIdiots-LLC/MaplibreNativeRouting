@@ -3,11 +3,14 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
+- `NavigationSession.PlanAsync` plans and draws the routes without the GPS, to choose one before setting off, and `FollowAsync` then follows it (`StartAsync` is the two together). An app planning a ride away from its start no longer has it rerouted at once from where the device is, and Start no longer has to plan again
 - The offline routers load the tiles along the trip, not the box round it: those within 30% of the trip's length (at least 5 km) of the straight line from origin to destination (`TileCoord.CoverCorridor`). A 136 km diagonal trip (Vermont to New Hampshire) is 5,547 tiles where the box was 9,016. The width is now in metres east-west too; it was in degrees of latitude, narrower than meant away from the equator
 - Tile download progress is reported about every 2%, not every tile (a long trip reported 9,000 times)
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
+- A simulated drive follows a reroute (MAUI and WPF): it kept driving the old route, so after a closure or leaving the route it left the new one at once, and rerouted again and again
+- `NavigationSession` (MAUI) stops the GPS listener only if it started it: ending navigation stopped it under an app still using it, such as one recording a track. A simulated drive ending no longer starts the GPS for a route that was only planned
 
 ## 0.1.0
 ### ✨ Features and improvements

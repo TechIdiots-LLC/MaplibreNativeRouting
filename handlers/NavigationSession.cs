@@ -7,7 +7,11 @@ namespace MaplibreNative.Routing;
 /// <summary>
 /// Navigation in a MAUI app: a <see cref="NavigationEngine"/> fed by the device's GPS, or by a simulated drive, with
 /// the route drawn by the <see cref="RouteOverlay"/>. Every event is raised on the main thread.
-/// Lifecycle: Create → StartAsync → (GPS updates, or StartSimulation) → StopAsync → Dispose.
+/// Lifecycle: Create → StartAsync (or PlanAsync, then FollowAsync) → (GPS updates, or StartSimulation) → StopAsync →
+/// Dispose.
+///
+/// The app has one GPS listener (MAUI's Geolocation foreground listener): the session starts it if it isn't running,
+/// and stops it only if it started it, so an app's own use of it (recording a track) carries on.
 /// </summary>
 public class NavigationSession : IAsyncDisposable
 {
@@ -15,7 +19,10 @@ public class NavigationSession : IAsyncDisposable
     private readonly RouteOverlay _overlay;
     private readonly NavigationEngine _engine;
     private RouteSimulator? _simulator;
+    private bool _simulatingRoute;     // the simulator drives the active route, so follows a reroute
     private bool _listening;
+    private bool _startedListener;     // the session started the GPS listener, so stops it
+    private bool _following;           // following the GPS (StartAsync / FollowAsync), not only planned
 
     public event EventHandler<RouteProgress>? ProgressUpdated;
     public event EventHandler<ManeuverAnnouncementEventArgs>? AnnouncementNeeded;
@@ -59,6 +66,8 @@ public class NavigationSession : IAsyncDisposable
         _engine.Rerouted += (_, route) => OnMain(() =>
         {
             _overlay.ShowRoutes([route], 0);
+            // A drive of the route goes on along the new one, from where it left the old
+            if (_simulator is { } sim && _simulatingRoute) RunSimulator(route, sim.SpeedFactor);
             Rerouted?.Invoke(this, route);
         });
     }
@@ -66,6 +75,19 @@ public class NavigationSession : IAsyncDisposable
     /// <summary>Calculates up to <paramref name="maxRoutes"/> alternative routes (sorted shortest
     /// first) and starts listening for GPS updates on the shortest one.</summary>
     public async Task<DirectionsRoute?> StartAsync(RouteOptions options, int maxRoutes = 1)
+    {
+        var routes = await PlanAsync(options, maxRoutes);
+        if (routes.Count == 0) return null;
+        await FollowAsync();
+        return routes[0];
+    }
+
+    /// <summary>
+    /// Calculates up to <paramref name="maxRoutes"/> alternative routes (sorted shortest first) and draws them, without
+    /// the GPS: to choose one (<see cref="SelectAlternative"/>) and then <see cref="FollowAsync"/> or
+    /// <see cref="StartSimulation"/>. Empty when no route is found.
+    /// </summary>
+    public async Task<IReadOnlyList<DirectionsRoute>> PlanAsync(RouteOptions options, int maxRoutes = 1)
     {
         var tracks = options.TrackFeatures.Count > 0
             ? options.TrackFeatures
@@ -79,13 +101,19 @@ public class NavigationSession : IAsyncDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"[NavigationSession] Route failed: {ex}");
-            return null;
+            return [];
         }
-        if (alternatives.Count == 0) return null;
+        if (alternatives.Count > 0) _overlay.ShowRoutes(alternatives, 0);
+        return alternatives;
+    }
 
-        _overlay.ShowRoutes(alternatives, 0);
+    /// <summary>Follows the route planned (<see cref="PlanAsync"/>) with the device's GPS. False when there's none.</summary>
+    public async Task<bool> FollowAsync()
+    {
+        if (_engine.Route is null) return false;
+        _following = true;
         await StartListeningAsync();
-        return alternatives[0];
+        return true;
     }
 
     /// <summary>A closure met on the way: a new route round it from here, kept for later reroutes (drawn on Rerouted).</summary>
@@ -108,12 +136,20 @@ public class NavigationSession : IAsyncDisposable
     {
         var route = path ?? _engine.Route;
         if (route is null) return;
-        StopSimulation();
         StopListening();
+        _simulatingRoute = path is null;
+        RunSimulator(route, speedFactor);
+    }
+
+    /// <summary>A simulator driving <paramref name="route"/> in place of the last, the GPS left as it is.</summary>
+    private void RunSimulator(DirectionsRoute route, double speedFactor)
+    {
+        _simulator?.Dispose();
         var sim = RouteSimulator.ForRoute(route);
         sim.SpeedFactor = speedFactor;
         sim.LocationChanged += (_, fix) =>
         {
+            if (!ReferenceEquals(Volatile.Read(ref _simulator), sim)) return;   // replaced or stopped
             _engine.UpdateLocation(fix);
             OnMain(() =>
             {
@@ -130,7 +166,7 @@ public class NavigationSession : IAsyncDisposable
         sim.Start();
     }
 
-    /// <summary>Ends a simulated drive; the device's GPS is followed again while navigating.</summary>
+    /// <summary>Ends a simulated drive; the device's GPS is followed again if it was (StartAsync / FollowAsync).</summary>
     public void StopSimulation()
     {
         var sim = _simulator;
@@ -138,7 +174,7 @@ public class NavigationSession : IAsyncDisposable
         _simulator = null;
         sim.Dispose();
         _overlay.ShowPosition(null);
-        if (_engine.Route is not null) _ = StartListeningAsync();
+        if (_following && _engine.Route is not null) _ = StartListeningAsync();
     }
 
     /// <summary>The simulated drive's speed, times real time.</summary>
@@ -154,6 +190,7 @@ public class NavigationSession : IAsyncDisposable
         var sim = _simulator;
         _simulator = null;
         sim?.Dispose();
+        _following = false;
         StopListening();
         Voice.Stop();
         _engine.Stop();
@@ -168,6 +205,7 @@ public class NavigationSession : IAsyncDisposable
         _listening = true;
         if (!Geolocation.IsListeningForeground)
         {
+            _startedListener = true;
             var req = new GeolocationListeningRequest(GeolocationAccuracy.Best, TimeSpan.FromSeconds(1));
             await Geolocation.StartListeningForegroundAsync(req);
         }
@@ -177,8 +215,9 @@ public class NavigationSession : IAsyncDisposable
     {
         if (!_listening) return;
         Geolocation.LocationChanged -= OnLocationChanged;
-        if (Geolocation.IsListeningForeground)
+        if (_startedListener && Geolocation.IsListeningForeground)
             Geolocation.StopListeningForeground();
+        _startedListener = false;
         _listening = false;
     }
 

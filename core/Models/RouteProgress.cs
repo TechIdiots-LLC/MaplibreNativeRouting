@@ -28,6 +28,15 @@ public class RouteProgress
     /// <summary>Snapped position on the route geometry.</summary>
     public (double Lon, double Lat) SnappedLocation { get; init; }
 
+    /// <summary>The location fix this progress is for.</summary>
+    public LocationFix Location { get; init; }
+
+    /// <summary>From the fix to the route's line, metres.</summary>
+    public double DistanceFromRouteMeters { get; init; }
+
+    /// <summary>Within <see cref="Navigation.RouteProgressTracker.ArrivalMeters"/> of the destination.</summary>
+    public bool HasArrived { get; init; }
+
     public RouteLeg CurrentLeg => Route.Legs[CurrentLegIndex];
     public LegStep CurrentStep => CurrentLeg.Steps[CurrentStepIndex];
     public LegStep? UpcomingStep

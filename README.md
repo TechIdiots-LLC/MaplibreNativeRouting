@@ -18,6 +18,8 @@ A .NET MAUI navigation and routing plugin for [MapLibre Native](https://github.c
 - **Hybrid routing** — automatically stitches road segments with trail A\* segments (Valhalla or MVT road engine)
 - **Shared tile cache** — optional `ITileCacheProvider` lets the routing plugin share tiles with the host app's map renderer cache
 - **Road search by name** — `RoadSearch` finds a road or a corner near a place from the same tiles: "Elm St", "Route 9", "Main St and Route 9", or a misheard "Pheasant St" for Pleasant Street
+- **Rerouting** — notices when you leave the route (too far from it, or heading away from the next turn) and plans a new one from where you are
+- **Simulated drives** — drive a route, or any other line, as fake GPS to try navigation and rerouting without going anywhere
 - **Turn-by-turn navigation** — `RouteProgressTracker` snaps GPS to route shape and advances steps
 - **Maneuver announcements** — fires events at 1000 m / 200 m / 30 m thresholds
 - **Highway warnings** — detects motorway/trunk segments and surfaces a dismissible warning bar
@@ -63,6 +65,35 @@ await session.StartAsync(new RouteOptions(origin, destination, RouteProfile.Hybr
 // From your GPS source (Windows Location API, NMEA parser, VistumblerCS, etc.)
 void OnLocationChanged(double lat, double lon) => session.UpdateLocation(lat, lon);
 ```
+
+## Rerouting and simulated drives
+
+`NavigationSession` (MAUI and WPF) runs on `NavigationEngine` in Core, which follows the route from each location fix
+and, when you leave it, plans a new route from where you are with the same options:
+
+```csharp
+session.OffRoute += (_, e) => status.Text = "Rerouting…";
+session.Rerouted += (_, route) => status.Text = $"New route: {route.Distance / 1000:F1} km";   // already drawn
+session.RerouteFailed += (_, e) => status.Text = e.Reason;
+session.Arrived += (_, _) => status.Text = "You have arrived";
+```
+
+You've left the route when you're further than 50 m from the current step (25 m approaching a turn, more when the
+GPS reports poor accuracy), or on it but getting further from the next turn over three fixes. A turn taken a little
+early isn't leaving it. After a reroute you must move 50 m before leaving the new route counts, and reroutes are at
+least 3 s apart. These are maplibre-navigation-android's rules and defaults; `NavigationOptions` changes them, and
+`AutoReroute = false` only reports `OffRoute`.
+
+To try it without going anywhere, drive the route as simulated GPS; the MAUI overlay draws the simulated position:
+
+```csharp
+session.StartSimulation(speedFactor: 4);                                     // the route, 4× real time
+session.StartSimulation(speedFactor: 4, path: session.RouteAlternatives[1]);  // another route: leaves this one, and reroutes
+session.StopSimulation();                                                    // back to the device's GPS
+```
+
+`RouteSimulator` drives each step at the speed it was timed at. In tests, step it with `Next()` or `All()` and feed
+`NavigationEngine.UpdateLocation` directly.
 
 ## Offline MVT routing
 

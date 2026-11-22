@@ -8,8 +8,10 @@ notices and licence terms are reproduced here as those licences require.
 <https://github.com/maplibre/maplibre-navigation-android>
 
 The routing core's models (`LegStep`, `ManeuverType`, `RouteProgress`), route progress tracking and snapping to the
-route (`RouteProgressTracker`), and the distances at which a maneuver is announced (`ManeuverAnnouncerHelper`) are
-ported from or modelled on its navigation core.
+route (`RouteProgressTracker`), the distances at which a maneuver is announced (`ManeuverAnnouncerHelper`), off-route
+detection (`OffRouteDetector`, from its OffRouteDetector and ToleranceUtils), the navigation defaults
+(`NavigationOptions`, from MapLibreNavigationOptions) and simulated drives (`RouteSimulator`, from its
+ReplayRouteLocationEngine and ReplayRouteLocationConverter) are ported from or modelled on its navigation core.
 
 ```text
 The MIT License (MIT)

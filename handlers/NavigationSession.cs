@@ -1,44 +1,57 @@
 using System.Diagnostics;
-using MapLibreNative.Maui.Handlers;
 using MaplibreNative.Routing.Core.Models;
 using MaplibreNative.Routing.Core.Navigation;
-using MaplibreNative.Routing.Core.Routing;
-using MaplibreNative.Routing.Core.Utils;
 
 namespace MaplibreNative.Routing;
 
 /// <summary>
-/// Ties together: route calculation, live GPS tracking, RouteProgressTracker,
-/// ManeuverAnnouncerHelper, and the map overlay. One session per active navigation.
-/// Lifecycle: Create → StartAsync → (GPS updates) → StopAsync → Dispose.
+/// Navigation in a MAUI app: a <see cref="NavigationEngine"/> fed by the device's GPS, or by a simulated drive, with
+/// the route drawn by the <see cref="RouteOverlay"/>. Every event is raised on the main thread.
+/// Lifecycle: Create → StartAsync → (GPS updates, or StartSimulation) → StopAsync → Dispose.
 /// </summary>
 public class NavigationSession : IAsyncDisposable
 {
     private readonly IRouteDataSource _dataSource;
     private readonly RouteOverlay _overlay;
-
-    private RouteProgressTracker? _tracker;
-    private ManeuverAnnouncerHelper? _announcer;
-    private DirectionsRoute? _activeRoute;
+    private readonly NavigationEngine _engine;
+    private RouteSimulator? _simulator;
     private bool _listening;
-    private List<DirectionsRoute> _routeAlternatives = [];
-    private int _selectedRouteIndex;
 
-    // Fires on the main thread whenever progress updates.
     public event EventHandler<RouteProgress>? ProgressUpdated;
-
-    // Fires when a maneuver announcement is needed.
     public event EventHandler<ManeuverAnnouncementEventArgs>? AnnouncementNeeded;
+    /// <summary>The user has left the route; with <see cref="NavigationOptions.AutoReroute"/>, a new one is being planned.</summary>
+    public event EventHandler<OffRouteEventArgs>? OffRoute;
+    /// <summary>A new route from where the user left the last one; already drawn and being followed.</summary>
+    public event EventHandler<DirectionsRoute>? Rerouted;
+    public event EventHandler<RerouteFailedEventArgs>? RerouteFailed;
+    public event EventHandler<RouteProgress>? Arrived;
+    /// <summary>Each position of a simulated drive (the map's own location puck doesn't show them).</summary>
+    public event EventHandler<LocationFix>? SimulatedLocationChanged;
+    /// <summary>A simulated drive reached its end.</summary>
+    public event EventHandler? SimulationFinished;
 
-    public DirectionsRoute? ActiveRoute => _activeRoute;
-    public IReadOnlyList<DirectionsRoute> RouteAlternatives => _routeAlternatives;
-    public int SelectedRouteIndex => _selectedRouteIndex;
-    public bool IsNavigating => _activeRoute is not null && _listening;
+    public NavigationEngine Engine => _engine;
+    public DirectionsRoute? ActiveRoute => _engine.Route;
+    public IReadOnlyList<DirectionsRoute> RouteAlternatives => _engine.Alternatives;
+    public int SelectedRouteIndex => _engine.SelectedIndex;
+    public bool IsNavigating => _engine.Route is not null && (_listening || IsSimulating);
+    public bool IsSimulating => _simulator is not null;
 
-    public NavigationSession(IRouteDataSource dataSource, RouteOverlay overlay)
+    public NavigationSession(IRouteDataSource dataSource, RouteOverlay overlay, NavigationOptions? options = null)
     {
         _dataSource = dataSource;
         _overlay = overlay;
+        _engine = new NavigationEngine(options);
+        _engine.ProgressUpdated += (_, p) => OnMain(() => ProgressUpdated?.Invoke(this, p));
+        _engine.AnnouncementNeeded += (_, e) => OnMain(() => AnnouncementNeeded?.Invoke(this, e));
+        _engine.OffRoute += (_, e) => OnMain(() => OffRoute?.Invoke(this, e));
+        _engine.Arrived += (_, p) => OnMain(() => Arrived?.Invoke(this, p));
+        _engine.RerouteFailed += (_, e) => OnMain(() => RerouteFailed?.Invoke(this, e));
+        _engine.Rerouted += (_, route) => OnMain(() =>
+        {
+            _overlay.ShowRoutes([route], 0);
+            Rerouted?.Invoke(this, route);
+        });
     }
 
     /// <summary>Calculates up to <paramref name="maxRoutes"/> alternative routes (sorted shortest
@@ -50,87 +63,122 @@ public class NavigationSession : IAsyncDisposable
             : await _dataSource.GetRoutableTrackFeaturesAsync();
         var optionsWithTracks = options with { TrackFeatures = tracks };
 
-        IRoutingEngine engine = options.Profile switch
-        {
-            RouteProfile.TrackOnly => new TrackGraphRouter(),
-            RouteProfile.HybridMotorcycle or RouteProfile.HybridBicycle => new HybridRouter(),
-            RouteProfile.HybridOfflineMotorcycle or RouteProfile.HybridOfflineBicycle => new HybridRouter(new MvtRouter()),
-            RouteProfile.OfflineAuto or RouteProfile.OfflineBicycle or RouteProfile.OfflinePedestrian => new MvtRouter(),
-            _ => new ValhallaMtbRouter(),
-        };
-
         // Run on a thread-pool thread so the MAUI main thread stays free to handle IProgress callbacks.
-        List<DirectionsRoute> alternatives;
-        try { alternatives = await Task.Run(() => engine.FindAlternativesAsync(optionsWithTracks, maxRoutes)); }
+        IReadOnlyList<DirectionsRoute> alternatives;
+        try { alternatives = await Task.Run(() => _engine.PlanAsync(optionsWithTracks, maxRoutes)); }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             Debug.WriteLine($"[NavigationSession] Route failed: {ex}");
             return null;
         }
-
         if (alternatives.Count == 0) return null;
 
-        _routeAlternatives = alternatives;
-        _selectedRouteIndex = 0;
-        var route = alternatives[0];
-
-        _activeRoute = route;
-        _tracker = new RouteProgressTracker(route);
-        _announcer = new ManeuverAnnouncerHelper();
-        _announcer.AnnouncementNeeded += (s, e) => AnnouncementNeeded?.Invoke(s, e);
-
-        _overlay.ShowRoutes(_routeAlternatives, 0);
-
-        Geolocation.LocationChanged += OnLocationChanged;
-        if (!Geolocation.IsListeningForeground)
-        {
-            var req = new GeolocationListeningRequest(GeolocationAccuracy.Best, TimeSpan.FromSeconds(1));
-            await Geolocation.StartListeningForegroundAsync(req);
-        }
-        _listening = true;
-
-        return route;
+        _overlay.ShowRoutes(alternatives, 0);
+        await StartListeningAsync();
+        return alternatives[0];
     }
 
     /// <summary>Switch to a different computed alternative without re-routing.</summary>
     public void SelectAlternative(int index)
     {
-        if (index < 0 || index >= _routeAlternatives.Count) return;
-        _selectedRouteIndex = index;
-        _activeRoute = _routeAlternatives[index];
-        _tracker = new RouteProgressTracker(_activeRoute);
-        _overlay.ShowRoutes(_routeAlternatives, index);
+        if (index < 0 || index >= _engine.Alternatives.Count) return;
+        _engine.SelectAlternative(index);
+        _overlay.ShowRoutes(_engine.Alternatives, index);
+    }
+
+    /// <summary>
+    /// Drives the route (or <paramref name="path"/>: another route, to try leaving this one) as simulated GPS, in
+    /// place of the device's, <paramref name="speedFactor"/> times faster than real time. The position is drawn on
+    /// the map.
+    /// </summary>
+    public void StartSimulation(double speedFactor = 1, DirectionsRoute? path = null)
+    {
+        var route = path ?? _engine.Route;
+        if (route is null) return;
+        StopSimulation();
+        StopListening();
+        var sim = RouteSimulator.ForRoute(route);
+        sim.SpeedFactor = speedFactor;
+        sim.LocationChanged += (_, fix) =>
+        {
+            _engine.UpdateLocation(fix);
+            OnMain(() =>
+            {
+                if (!ReferenceEquals(_simulator, sim)) return;
+                _overlay.ShowPosition(fix);
+                SimulatedLocationChanged?.Invoke(this, fix);
+            });
+        };
+        sim.Finished += (_, _) => OnMain(() =>
+        {
+            if (ReferenceEquals(_simulator, sim)) SimulationFinished?.Invoke(this, EventArgs.Empty);
+        });
+        _simulator = sim;
+        sim.Start();
+    }
+
+    /// <summary>Ends a simulated drive; the device's GPS is followed again while navigating.</summary>
+    public void StopSimulation()
+    {
+        var sim = _simulator;
+        if (sim is null) return;
+        _simulator = null;
+        sim.Dispose();
+        _overlay.ShowPosition(null);
+        if (_engine.Route is not null) _ = StartListeningAsync();
+    }
+
+    /// <summary>The simulated drive's speed, times real time.</summary>
+    public double SimulationSpeedFactor
+    {
+        get => _simulator?.SpeedFactor ?? 1;
+        set { if (_simulator is not null) _simulator.SpeedFactor = value; }
     }
 
     /// <summary>Stops navigation and removes the route overlay.</summary>
     public async Task StopAsync()
     {
-        Geolocation.LocationChanged -= OnLocationChanged;
-        if (_listening && Geolocation.IsListeningForeground)
-            Geolocation.StopListeningForeground();
-        _listening = false;
-        _activeRoute = null;
-        _routeAlternatives = [];
-        _selectedRouteIndex = 0;
-        _tracker = null;
-        _announcer = null;
+        var sim = _simulator;
+        _simulator = null;
+        sim?.Dispose();
+        StopListening();
+        _engine.Stop();
         _overlay.ClearRoute();
         await Task.CompletedTask;
     }
 
+    private async Task StartListeningAsync()
+    {
+        if (_listening || IsSimulating) return;
+        Geolocation.LocationChanged += OnLocationChanged;
+        _listening = true;
+        if (!Geolocation.IsListeningForeground)
+        {
+            var req = new GeolocationListeningRequest(GeolocationAccuracy.Best, TimeSpan.FromSeconds(1));
+            await Geolocation.StartListeningForegroundAsync(req);
+        }
+    }
+
+    private void StopListening()
+    {
+        if (!_listening) return;
+        Geolocation.LocationChanged -= OnLocationChanged;
+        if (Geolocation.IsListeningForeground)
+            Geolocation.StopListeningForeground();
+        _listening = false;
+    }
+
     private void OnLocationChanged(object? sender, GeolocationLocationChangedEventArgs e)
     {
-        if (_tracker is null || _activeRoute is null) return;
         var loc = e.Location;
+        _engine.UpdateLocation(new LocationFix(loc.Latitude, loc.Longitude, loc.Accuracy, loc.Course, loc.Speed));
+    }
 
-        var progress = _tracker.Update(loc.Latitude, loc.Longitude);
-        _announcer?.Update(progress);
-
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            ProgressUpdated?.Invoke(this, progress);
-        });
+    private static void OnMain(Action action)
+    {
+        if (MainThread.IsMainThread) action();
+        else MainThread.BeginInvokeOnMainThread(action);
     }
 
     public async ValueTask DisposeAsync() => await StopAsync();

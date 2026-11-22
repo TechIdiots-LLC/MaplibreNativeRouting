@@ -18,6 +18,8 @@ public class RouteOverlay
     private const string AltLayerId      = "routing-alt-line";
     private const string HighwaySourceId = "routing-highway-src";
     private const string HighwayLayerId  = "routing-highway-line";
+    private const string PositionSourceId = "routing-position-src";
+    private const string PositionLayerId  = "routing-position";
 
     private IMapLibreMapController? _controller;
     private readonly HashSet<string> _activeLayers = [];
@@ -88,9 +90,40 @@ public class RouteOverlay
         }
     }
 
+    /// <summary>
+    /// A marker where the user is, for a position the map's own location puck doesn't show: a simulated drive's.
+    /// Null removes it.
+    /// </summary>
+    public void ShowPosition(LocationFix? fix)
+    {
+        if (_controller is null) return;
+        if (fix is not { } f)
+        {
+            TryRemove(PositionLayerId, PositionSourceId);
+            return;
+        }
+        try
+        {
+            string geoJson = string.Create(CultureInfo.InvariantCulture,
+                $"{{\"type\":\"FeatureCollection\",\"features\":[{{\"type\":\"Feature\",\"properties\":{{}},\"geometry\":{{\"type\":\"Point\",\"coordinates\":[{f.Lon:F6},{f.Lat:F6}]}}}}]}}");
+            SetOrAddSource(PositionSourceId, PositionLayerId, geoJson, new Dictionary<string, object?>
+            {
+                ["circle-radius"]       = 8.0,
+                ["circle-color"]        = "#1565C0",
+                ["circle-stroke-color"] = "#FFFFFF",
+                ["circle-stroke-width"] = 3.0,
+            }, circle: true);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[RouteOverlay] ShowPosition threw: {ex}");
+        }
+    }
+
     public void ClearRoute()
     {
         if (_controller is null) return;
+        TryRemove(PositionLayerId, PositionSourceId);
         TryRemove(AltLayerId,     AltSourceId);
         TryRemove(RouteLayerId,   RouteSourceId);
         TryRemove(HighwayLayerId, HighwaySourceId);
@@ -102,7 +135,7 @@ public class RouteOverlay
     // cause the subsequent AddGeoJsonSource to fail because the source already exists.
     private void SetOrAddSource(
         string sourceId, string layerId, string geoJson,
-        Dictionary<string, object?> paint)
+        Dictionary<string, object?> paint, bool circle = false)
     {
         if (_activeLayers.Contains(layerId))
         {
@@ -114,8 +147,12 @@ public class RouteOverlay
             try { _controller!.RemoveSource(sourceId); } catch { }
 
             _controller!.AddGeoJsonSource(sourceId, geoJson);
-            _controller.AddLineLayer(layerId, sourceId,
-                belowLayerId: null, sourceLayer: null, properties: paint);
+            // A route line added after the position marker goes below it, so the marker stays on top
+            string? below = !circle && _activeLayers.Contains(PositionLayerId) ? PositionLayerId : null;
+            if (circle)
+                _controller.AddCircleLayer(layerId, sourceId, belowLayerId: null, sourceLayer: null, properties: paint);
+            else
+                _controller.AddLineLayer(layerId, sourceId, belowLayerId: below, sourceLayer: null, properties: paint);
             _activeLayers.Add(layerId);
         }
     }

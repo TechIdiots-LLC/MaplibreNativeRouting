@@ -10,7 +10,8 @@ notices and licence terms are reproduced here as those licences require.
 The routing core's models (`LegStep`, `ManeuverType`, `RouteProgress`), route progress tracking and snapping to the
 route (`RouteProgressTracker`), the distances at which a maneuver is announced (`ManeuverAnnouncerHelper`), off-route
 detection (`OffRouteDetector`, from its OffRouteDetector and ToleranceUtils), the navigation defaults
-(`NavigationOptions`, from MapLibreNavigationOptions) and simulated drives (`RouteSimulator`, from its
+(`NavigationOptions`, from MapLibreNavigationOptions), the following camera's tilt and zoom (`NavigationCamera`, from
+its DynamicCamera and SimpleCamera) and simulated drives (`RouteSimulator`, from its
 ReplayRouteLocationEngine and ReplayRouteLocationConverter) are ported from or modelled on its navigation core.
 
 ```text

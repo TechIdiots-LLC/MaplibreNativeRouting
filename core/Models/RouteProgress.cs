@@ -34,6 +34,9 @@ public class RouteProgress
     /// <summary>From the fix to the route's line, metres.</summary>
     public double DistanceFromRouteMeters { get; init; }
 
+    /// <summary>How far along the current leg's line the snapped location is, metres.</summary>
+    public double LegDistanceTraveledMeters { get; init; }
+
     /// <summary>Within <see cref="Navigation.RouteProgressTracker.ArrivalMeters"/> of the destination.</summary>
     public bool HasArrived { get; init; }
 

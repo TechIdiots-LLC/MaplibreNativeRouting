@@ -21,6 +21,7 @@ A .NET MAUI navigation and routing plugin for [MapLibre Native](https://github.c
 - **Rerouting** — notices when you leave the route (too far from it, or heading away from the next turn) and plans a new one from where you are
 - **Simulated drives** — drive a route, or any other line, as fake GPS to try navigation and rerouting without going anywhere
 - **Turn-by-turn navigation** — `RouteProgressTracker` snaps GPS to route shape and advances steps
+- **Following camera** — the map follows you, turned to the road ahead and tilted, zoomed to show the next turn; pausing when you pan, with recenter and an overview of the rest of the route
 - **Spoken instructions** — "In 400 feet, turn left onto Main Street, Route 122A", spoken through the platform's text-to-speech when `session.Voice.IsEnabled` is set; announced about 60, 15 and 4 seconds before each turn (never nearer than 1000, 200 and 30 m), in metric, imperial or UK units
 - **Highway warnings** — detects motorway/trunk segments and surfaces a dismissible warning bar
 - **`NavigationPanel` control** — dark overlay with maneuver icon, instruction, step distance, and ETA
@@ -107,6 +108,24 @@ never nearer than 1000, 200 and 30 m ("In 0.5 miles, turn left onto Pleasant Str
 miles…", then "Turn left onto Pleasant Street, Route 122"). Going straight on into a new street name is said once, as
 it's reached. The start ("Head southwest on Maple Street"), a new route and the arrival are said too. Distances
 are rounded as a driver hears them, in the region's units unless `NavigationOptions.Units` says otherwise.
+
+## Following camera
+
+```csharp
+// MAUI: once the map's style has loaded
+session.Camera.SetController(map.Handler is MapLibreMapHandler h ? h.Controller : null);
+session.Camera.SetViewport(map.Width, map.Height);
+session.Camera.Camera.BottomInset = sheet.Height;              // panels over the map
+session.Camera.PausedChanged += (_, _) => recenterButton.IsVisible = session.Camera.IsPaused;
+recenterButton.Clicked += (_, _) => session.Camera.Recenter();
+overviewButton.Clicked += (_, _) => session.Camera.ShowOverview();
+```
+
+Following, the user sits low in the view so more of the road ahead shows, the view turns with the road a little
+ahead of them, tilts 45° to 60° (more the further the next turn is) and zooms to fit them and the next turn, between
+zoom 12 and 16, changing only at a new step and as the turn nears: maplibre-navigation-android's DynamicCamera.
+`NavigationCameraMode.NorthUp` keeps north up and the map flat. Panning or zooming the map pauses it until
+`Recenter()`. On WPF, `NavigationCamera.For(progress)` gives the position for your own map control.
 
 ## Offline MVT routing
 

@@ -94,6 +94,7 @@ public class RouteProgressTracker
             SnappedLocation = (snap.Lon, snap.Lat),
             Location = fix,
             DistanceFromRouteMeters = snap.DistanceMeters,
+            LegDistanceTraveledMeters = snap.AlongMeters,
             HasArrived = _legIndex == _route.Legs.Count - 1 && remaining <= ArrivalMeters,
         };
     }

@@ -35,6 +35,8 @@ public class NavigationSession : IAsyncDisposable
     public NavigationEngine Engine => _engine;
     /// <summary>Speaks the instructions once its IsEnabled is set.</summary>
     public VoiceGuidance Voice { get; }
+    /// <summary>Moves the map with navigation, once given the map's controller (Camera.SetController).</summary>
+    public NavigationCameraController Camera { get; }
     public DirectionsRoute? ActiveRoute => _engine.Route;
     public IReadOnlyList<DirectionsRoute> RouteAlternatives => _engine.Alternatives;
     public int SelectedRouteIndex => _engine.SelectedIndex;
@@ -47,6 +49,7 @@ public class NavigationSession : IAsyncDisposable
         _overlay = overlay;
         _engine = new NavigationEngine(options);
         Voice = new VoiceGuidance(_engine);
+        Camera = new NavigationCameraController(this);
         _engine.ProgressUpdated += (_, p) => OnMain(() => ProgressUpdated?.Invoke(this, p));
         _engine.AnnouncementNeeded += (_, e) => OnMain(() => AnnouncementNeeded?.Invoke(this, e));
         _engine.OffRoute += (_, e) => OnMain(() => OffRoute?.Invoke(this, e));

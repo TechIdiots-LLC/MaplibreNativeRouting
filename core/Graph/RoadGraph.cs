@@ -30,8 +30,10 @@ public sealed class RoadGraph
         _spatialHash = hash;
     }
 
-    internal static RoadGraph Build(IReadOnlyList<MvtRoadSegment> segments, MvtCostingModel costing)
+    internal static RoadGraph Build(IReadOnlyList<MvtRoadSegment> segments, MvtCostingModel costing,
+        IReadOnlyList<RouteClosure>? closures = null)
     {
+        closures ??= [];
         var nodes = new List<GraphNode>();
         var coordToId = new Dictionary<(long, long), int>();
         var fwd = new Dictionary<int, List<RoadEdge>>();
@@ -80,6 +82,8 @@ public sealed class RoadGraph
 
             for (int i = 0; i < coords.Count - 1; i++)
             {
+                // A closed stretch isn't in the graph at all
+                if (closures.Count > 0 && RouteClosure.AnyBlocks(closures, coords[i], coords[i + 1])) continue;
                 int fromId = GetOrCreateNode(coords[i].Lat, coords[i].Lon);
                 int toId = GetOrCreateNode(coords[i + 1].Lat, coords[i + 1].Lon);
                 if (fromId == toId) continue;
@@ -116,6 +120,66 @@ public sealed class RoadGraph
         }
 
         return new RoadGraph(nodes, fwd, bwd, spatialHash);
+    }
+
+    private int[]? _component;
+    private int _largestComponent = -1;
+
+    /// <summary>
+    /// The start and end nodes for a trip, in one connected part of the graph: the part that puts them nearest the
+    /// origin and destination together, of the parts each is nearest, and the largest. A place whose nearest node
+    /// is on a piece nothing reaches (an unconnected trail) is joined from the nearest that is.
+    /// </summary>
+    public (GraphNode Start, GraphNode Goal)? NearestConnected((double Lat, double Lon) origin, (double Lat, double Lon) destination)
+    {
+        if (_nodes.Count == 0) return null;
+        var comp = Components();
+        var near = new[] { NearestNode(origin.Lat, origin.Lon), NearestNode(destination.Lat, destination.Lon) };
+        var parts = near.Where(n => n is not null).Select(n => comp[n!.Id]).Append(_largestComponent).Distinct();
+        (GraphNode, GraphNode)? best = null;
+        double bestSum = double.MaxValue;
+        foreach (int part in parts)
+        {
+            GraphNode? s = null, g = null;
+            double ds = double.MaxValue, dg = double.MaxValue;
+            foreach (var n in _nodes)
+            {
+                if (comp[n.Id] != part) continue;
+                double a = RouteUtils.HaversineMeters(origin.Lat, origin.Lon, n.Lat, n.Lon);
+                double b = RouteUtils.HaversineMeters(destination.Lat, destination.Lon, n.Lat, n.Lon);
+                if (a < ds) (ds, s) = (a, n);
+                if (b < dg) (dg, g) = (b, n);
+            }
+            if (s is not null && g is not null && ds + dg < bestSum) (bestSum, best) = (ds + dg, (s, g));
+        }
+        return best;
+    }
+
+    /// <summary>Which connected part (either direction) each node is in.</summary>
+    private int[] Components()
+    {
+        if (_component is not null) return _component;
+        var comp = new int[_nodes.Count];
+        Array.Fill(comp, -1);
+        int parts = 0, largestSize = 0;
+        var todo = new Stack<int>();
+        for (int s = 0; s < _nodes.Count; s++)
+        {
+            if (comp[s] >= 0) continue;
+            int size = 0;
+            comp[s] = parts;
+            todo.Push(s);
+            while (todo.Count > 0)
+            {
+                int v = todo.Pop();
+                size++;
+                foreach (var e in _forwardAdj[v]) if (comp[e.ToNodeId] < 0) { comp[e.ToNodeId] = parts; todo.Push(e.ToNodeId); }
+                foreach (var e in _backwardAdj[v]) if (comp[e.FromNodeId] < 0) { comp[e.FromNodeId] = parts; todo.Push(e.FromNodeId); }
+            }
+            if (size > largestSize) (largestSize, _largestComponent) = (size, parts);
+            parts++;
+        }
+        return _component = comp;
     }
 
     public GraphNode? NearestNode(double lat, double lon)

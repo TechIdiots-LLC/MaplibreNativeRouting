@@ -17,6 +17,20 @@ internal static class MvtGraphBuilder
         double destLat, double destLon,
         MvtCostingModel costing,
         CancellationToken ct = default,
+        IProgress<string>? progress = null,
+        IReadOnlyList<RouteClosure>? closures = null)
+    {
+        var segments = await LoadSegmentsAsync(tiles, originLat, originLon, destLat, destLon, ct, progress).ConfigureAwait(false);
+        progress?.Report("Building road graph…");
+        return RoadGraph.Build(RoadJunctions.Connect(RoadJunctions.ApplyClosures(segments, closures ?? [])), costing, closures);
+    }
+
+    /// <summary>The road pieces of the tiles around the corridor from the origin to the destination.</summary>
+    public static async Task<List<MvtRoadSegment>> LoadSegmentsAsync(
+        TileProvider tiles,
+        double originLat, double originLon,
+        double destLat, double destLon,
+        CancellationToken ct = default,
         IProgress<string>? progress = null)
     {
         var tileData = await tiles.GetCorridorTilesAsync(
@@ -25,16 +39,13 @@ internal static class MvtGraphBuilder
 
         progress?.Report($"Parsing {tileData.Count} tile(s)…");
         var segments = new List<MvtRoadSegment>();
-
         foreach (var (coord, data) in tileData)
         {
             ct.ThrowIfCancellationRequested();
             var mvtTile = MvtDecoder.Decode(data);
             ExtractSegments(mvtTile, coord, segments);
         }
-
-        progress?.Report("Building road graph…");
-        return RoadGraph.Build(RoadJunctions.Connect(segments), costing);
+        return segments;
     }
 
     public static async Task<RoadGraph> BuildExpandedAsync(

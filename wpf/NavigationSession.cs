@@ -85,6 +85,9 @@ public class NavigationSession : IAsyncDisposable
         return routes[0];
     }
 
+    /// <summary>A closure met on the way: a new route round it from here, kept for later reroutes (drawn on Rerouted).</summary>
+    public Task<DirectionsRoute?> AddClosureAsync(RouteClosure closure) => _engine.AddClosureAsync(closure);
+
     /// <summary>
     /// Call this from your GPS handler (e.g. LocationChanged, NMEA parser) to
     /// advance the route progress tracker and fire ProgressUpdated.

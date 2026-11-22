@@ -14,6 +14,7 @@ internal static class RoadJunctions
 {
     private const double CellDeg = 0.0005;   // ~50 m
     private const double TouchM = 2.0;       // an end this near another piece's line is on it
+    private const double TrailTouchM = 50;   // a trail's end, drawn by GPS, this near (SpatialGraph's endpoint merge)
     private const double EndT = 1e-9;
 
     public static List<MvtRoadSegment> Connect(IReadOnlyList<MvtRoadSegment> segments)
@@ -76,17 +77,24 @@ internal static class RoadJunctions
         // Ends: one lying on another piece's line (a road ending on another, or a tile's edge) is put onto it
         for (int s = 0; s < lines.Count; s++)
         {
+            double reach = segments[s].RoadClass == Routing.MvtCostingModel.TrailClass ? TrailTouchM : TouchM;
+            int cells = (int)Math.Ceiling(reach / ky / CellDeg);
             foreach (int end in new[] { 0, lines[s].Count - 1 })
             {
                 var p = lines[s][end];
-                if (!grid.TryGetValue((Cell(p.Lon), Cell(p.Lat)), out var near)) continue;
                 (int S, int I, double T, (double Lon, double Lat) Q, double D)? best = null;
-                foreach (var (s2, i2) in near)
-                {
-                    if (s2 == s || !SameLevel(segments[s], segments[s2])) continue;
-                    var (t, q, d) = Project(p, lines[s2][i2], lines[s2][i2 + 1], kx, ky);
-                    if (d <= TouchM && (best == null || d < best.Value.D)) best = (s2, i2, t, q, d);
-                }
+                var tried = new HashSet<(int, int)>();
+                for (int cx = Cell(p.Lon) - cells; cx <= Cell(p.Lon) + cells; cx++)
+                    for (int cy = Cell(p.Lat) - cells; cy <= Cell(p.Lat) + cells; cy++)
+                    {
+                        if (!grid.TryGetValue((cx, cy), out var near)) continue;
+                        foreach (var (s2, i2) in near)
+                        {
+                            if (s2 == s || !tried.Add((s2, i2)) || !SameLevel(segments[s], segments[s2])) continue;
+                            var (t, q, d) = Project(p, lines[s2][i2], lines[s2][i2 + 1], kx, ky);
+                            if (d <= reach && (best == null || d < best.Value.D)) best = (s2, i2, t, q, d);
+                        }
+                    }
                 if (best is not { } b) continue;
                 var onto = b.T <= EndT ? lines[b.S][b.I] : b.T >= 1 - EndT ? lines[b.S][b.I + 1] : b.Q;
                 lines[s][end] = onto;
@@ -114,6 +122,22 @@ internal static class RoadJunctions
             });
         }
         return result;
+    }
+
+    /// <summary>Road pieces with the closures cut out of them, exactly at their edges.</summary>
+    public static List<MvtRoadSegment> ApplyClosures(IReadOnlyList<MvtRoadSegment> segments, IReadOnlyList<RouteClosure> closures)
+    {
+        if (closures.Count == 0) return [.. segments];
+        var open = new List<MvtRoadSegment>(segments.Count);
+        foreach (var o in segments)
+            foreach (var piece in RouteClosure.Cut(o.Coordinates, closures))
+                open.Add(new MvtRoadSegment
+                {
+                    Coordinates = piece, RoadClass = o.RoadClass, Subclass = o.Subclass, Oneway = o.Oneway,
+                    Surface = o.Surface, Brunnel = o.Brunnel, Layer = o.Layer, Toll = o.Toll, Ramp = o.Ramp,
+                    AccessRestricted = o.AccessRestricted, Name = o.Name, Ref = o.Ref, FeatureId = o.FeatureId,
+                });
+        return open;
     }
 
     /// <summary>A bridge meets a bridge, a tunnel a tunnel, a road a road; and only on the same layer.</summary>

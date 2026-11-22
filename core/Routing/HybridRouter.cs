@@ -5,19 +5,16 @@ using MaplibreNative.Routing.Core.Utils;
 namespace MaplibreNative.Routing.Core.Routing;
 
 /// <summary>
-/// Combines road routing with trail routing (SpatialGraph A*).
+/// Combines a road service (Valhalla) with trail routing (SpatialGraph A*), for the online hybrid profiles. The
+/// offline ones route trails and roads as one network instead (<see cref="HybridGraphRouter"/>).
 ///
 /// Flow:
-///   1. Build SpatialGraph from track features (once).
-///   2. Find nearest track nodes to origin and destination.
-///   3. Run A* on the already-built graph (once).
-///   3a. If both snap within SnapThresholdM and A* succeeds → return pure trail route.
-///   3b. Otherwise attempt hybrid stitch:
-///       - Road engine: origin → nearest track entry point   (only when origin is far from trail)
-///       - Pre-computed A* result: entry → exit
-///       - Road engine: track exit → destination             (only when dest is far from trail)
-///       - Stitch into a single DirectionsRoute.
-///   4. Attach HighwayWarning if any road segment uses motorway/trunk.
+///   1. Build SpatialGraph from track features, less any closures.
+///   2. Find nearest track nodes to origin and destination, and A* between them.
+///   3. When the trails connect them: the road from the origin to the trail when the origin is off it
+///      (beyond SnapThresholdM), the trail, and the road from the trail to the destination when that's off it.
+///   4. When they don't: the road route from the origin to the destination.
+///   5. Attach HighwayWarning if any road segment uses motorway/trunk.
 /// </summary>
 public class HybridRouter : IRoutingEngine
 {
@@ -43,7 +40,7 @@ public class HybridRouter : IRoutingEngine
         }
 
         progress?.Report("Building trail graph…");
-        var graph = SpatialGraph.Build(options.TrackFeatures);
+        var graph = SpatialGraph.Build(RouteClosure.Apply(options.TrackFeatures, options.Closures));
         progress?.Report(
             $"Trail graph: {graph.Nodes.Count:N0} nodes, {graph.EdgeCount:N0} edges" +
             $" from {options.TrackFeatures.Count:N0} features");
@@ -76,33 +73,25 @@ public class HybridRouter : IRoutingEngine
             ? BuildTrailRoute(trailPath, options.Profile)
             : null;
 
-        // Trail A* found a path → return it directly, regardless of snap distances.
-        if (trailSegment is not null)
+        // The trails don't connect the two: the road all the way
+        if (trailSegment is null)
         {
-            progress?.Report($"Trail route found ({trailSegment.Distance / 1000.0:F1} km).");
-            return trailSegment;
+            progress?.Report("The trails don't connect these places — routing by road…");
+            return await _roadEngine.RouteAsync(options);
         }
+        progress?.Report($"Trail route found ({trailSegment.Distance / 1000.0:F1} km).");
 
-        progress?.Report("Trail A* found no path — network may be disconnected between these locations");
-
-        // Trail A* failed. Hybrid stitch: road-to-trail (when origin is far from trail),
-        // then road-to-destination (when dest is far from trail). The trail segment itself
-        // is skipped here because it uses the same graph and would fail identically.
-        var entryPoint = (originNode.Lat, originNode.Lon);
-        var exitPoint  = (destNode.Lat, destNode.Lon);
-
-        DirectionsRoute? roadToTrail = null;
+        // On the trail at both ends: the trail alone
+        DirectionsRoute? roadToTrail = null, trailToRoad = null;
         if (originSnap > SnapThresholdM)
         {
             progress?.Report("Routing road → trail entry…");
-            roadToTrail = await _roadEngine.RouteAsync(options with { Destination = entryPoint });
+            roadToTrail = await _roadEngine.RouteAsync(options with { Destination = (originNode.Lat, originNode.Lon) });
         }
-
-        DirectionsRoute? trailToRoad = null;
         if (destSnap > SnapThresholdM)
         {
             progress?.Report("Routing trail exit → road…");
-            trailToRoad = await _roadEngine.RouteAsync(options with { Origin = exitPoint });
+            trailToRoad = await _roadEngine.RouteAsync(options with { Origin = (destNode.Lat, destNode.Lon) });
         }
 
         progress?.Report("Stitching route…");
@@ -120,7 +109,7 @@ public class HybridRouter : IRoutingEngine
         if (options.TrackFeatures.Count == 0 || maxCount <= 0)
             goto fallback;
 
-        var graph = SpatialGraph.Build(options.TrackFeatures);
+        var graph = SpatialGraph.Build(RouteClosure.Apply(options.TrackFeatures, options.Closures));
         if (graph.Nodes.Count == 0) goto fallback;
 
         var originNode = graph.NearestNode(options.Origin.Lat, options.Origin.Lon);

@@ -12,6 +12,7 @@ public sealed class MvtRouter : IRoutingEngine
 
     private static TileProvider? _tileProvider;
     private static ITileCacheProvider? _currentCacheProvider;
+    private static string? _currentTileJsonUrl;
     private static readonly SemaphoreSlim InitLock = new(1, 1);
 
     public async Task<DirectionsRoute?> RouteAsync(RouteOptions options)
@@ -41,7 +42,7 @@ public sealed class MvtRouter : IRoutingEngine
                 provider,
                 options.Origin.Lat, options.Origin.Lon,
                 options.Destination.Lat, options.Destination.Lon,
-                costing, options.CancellationToken, progress).ConfigureAwait(false);
+                costing, options.CancellationToken, progress, options.Closures).ConfigureAwait(false);
 
             var startNode = graph.NearestNode(options.Origin.Lat, options.Origin.Lon);
             var goalNode = graph.NearestNode(options.Destination.Lat, options.Destination.Lon);
@@ -97,22 +98,28 @@ public sealed class MvtRouter : IRoutingEngine
         return RouteUtils.AttachHighwayWarning(route);
     }
 
-    private static async Task<TileProvider> GetOrCreateProviderAsync(
+    /// <summary>
+    /// The tile source for a TileJSON (or a tile URL template with {z}/{x}/{y}), kept while it's the one asked for:
+    /// another source or cache makes a new one.
+    /// </summary>
+    internal static async Task<TileProvider> GetOrCreateProviderAsync(
         string tileJsonUrl, ITileCacheProvider? cacheProvider, CancellationToken ct)
     {
-        if (_tileProvider != null && ReferenceEquals(_currentCacheProvider, cacheProvider))
-            return _tileProvider;
+        bool Same() => _tileProvider != null && ReferenceEquals(_currentCacheProvider, cacheProvider)
+                       && _currentTileJsonUrl == tileJsonUrl;
+        if (Same()) return _tileProvider!;
 
         await InitLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (_tileProvider != null && ReferenceEquals(_currentCacheProvider, cacheProvider))
-                return _tileProvider;
+            if (Same()) return _tileProvider!;
 
-            string urlTemplate = await TileProvider.ResolveTileJsonAsync(tileJsonUrl, ct)
-                .ConfigureAwait(false);
+            string urlTemplate = tileJsonUrl.Contains("{z}")
+                ? tileJsonUrl
+                : await TileProvider.ResolveTileJsonAsync(tileJsonUrl, ct).ConfigureAwait(false);
             _tileProvider = new TileProvider(urlTemplate, cacheProvider: cacheProvider);
             _currentCacheProvider = cacheProvider;
+            _currentTileJsonUrl = tileJsonUrl;
             return _tileProvider;
         }
         finally

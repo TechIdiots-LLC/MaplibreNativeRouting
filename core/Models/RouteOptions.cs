@@ -11,6 +11,9 @@ public record RouteOptions
 
     /// <summary>Stops on the way, in order: the route has a leg to each, then one to the destination.</summary>
     public IReadOnlyList<(double Lat, double Lon)> Waypoints { get; init; } = [];
+
+    /// <summary>Places no route may pass (a closed trail, a washed-out road), trails and roads alike.</summary>
+    public IReadOnlyList<RouteClosure> Closures { get; init; } = [];
     public required RouteProfile Profile { get; init; }
 
     /// <summary>Valhalla endpoint. Defaults to the public OSM instance.</summary>

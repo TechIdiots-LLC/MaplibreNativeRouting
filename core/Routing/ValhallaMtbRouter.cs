@@ -47,6 +47,10 @@ public class ValhallaMtbRouter : IRoutingEngine
             ["shape_format"] = "geojson",
             ["units"] = "kilometers",
         };
+        // Closures: areas the route mustn't enter
+        if (options.Closures.Count > 0)
+            body["exclude_polygons"] = new JsonArray(options.Closures.Select(c =>
+                (JsonNode)new JsonArray(c.ToPolygon().Select(p => (JsonNode)new JsonArray(p.Lon, p.Lat)).ToArray())).ToArray());
 
         HttpResponseMessage response;
         try

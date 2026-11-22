@@ -14,7 +14,7 @@ public class TrackGraphRouter : IRoutingEngine
         if (options.TrackFeatures.Count == 0)
             return Task.FromResult<DirectionsRoute?>(null);
 
-        var graph = SpatialGraph.Build(options.TrackFeatures);
+        var graph = SpatialGraph.Build(RouteClosure.Apply(options.TrackFeatures, options.Closures));
         if (graph.Nodes.Count == 0)
             return Task.FromResult<DirectionsRoute?>(null);
 

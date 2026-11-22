@@ -15,7 +15,8 @@ A .NET MAUI navigation and routing plugin for [MapLibre Native](https://github.c
 - **Valhalla routing** — pedestrian, bicycle, motorcycle, and auto profiles with highway avoidance
 - **Offline MVT routing** — pure C# road routing from OpenMapTiles vector tiles, no external server needed (`OfflineAuto`, `OfflineBicycle`, `OfflinePedestrian`)
 - **Track-graph routing** — offline A\* pathfinding over imported GeoJSON/GPX track layers
-- **Hybrid routing** — automatically stitches road segments with trail A\* segments (Valhalla or MVT road engine)
+- **Hybrid routing** — your trails and the map's roads as one network: trails preferred, rural roads to link them, get round a closure or reach a start off the trails (offline); or a road service stitched to the trails (Valhalla)
+- **Closures** — places no route may pass, trails and roads alike; added on the way, they reroute round at once
 - **Shared tile cache** — optional `ITileCacheProvider` lets the routing plugin share tiles with the host app's map renderer cache
 - **Road search by name** — `RoadSearch` finds a road or a corner near a place from the same tiles: "Elm St", "Route 9", "Main St and Route 9", or a misheard "Pheasant St" for Pleasant Street
 - **Rerouting** — notices when you leave the route (too far from it, or heading away from the next turn) and plans a new one from where you are
@@ -161,7 +162,29 @@ await session.StartAsync(new RouteOptions
 });
 ```
 
-Hybrid offline profiles (`HybridOfflineMotorcycle`, `HybridOfflineBicycle`) route primarily on GeoJSON trail features and use MVT roads to fill gaps between trail segments.
+### Hybrid: trails and roads together
+
+The offline hybrid profiles (`HybridOfflineMotorcycle`, `HybridOfflineBicycle`) route over your trails
+(`TrackFeatures`) and the map's roads as one network, so a route can go trail, road, trail as the land needs: round a
+closed trail by the nearest rural roads and back on, or by road from home to where the trails start. A trail's end
+within 50 m of a road or another trail is joined to it, and a trail crossing a road at grade meets it there.
+
+Trails are preferred: on `HybridOfflineMotorcycle` a metre of trail costs its time at 25 km/h, a track, minor or
+service road twice its time, tertiary and secondary roads three times, bigger roads four; motorways and footpaths
+are closed to it. `HybridOfflineBicycle` is the same at bicycle speeds, with cycle paths allowed. A destination on
+a trail nothing joins is reached as near as the network goes.
+
+### Closures
+
+```csharp
+var options = baseOptions with { Closures = [new RouteClosure(42.353, -71.870, RadiusMeters: 40)] };
+
+// Or met on the way: a new route round it from where you are, kept for every later reroute
+await session.AddClosureAsync(new RouteClosure(lat, lon, 40));
+```
+
+Everything within the radius is left out, trails and roads alike, cut exactly at its edge. Every offline profile and
+`TrackOnly` honour them; Valhalla is sent them as excluded areas.
 
 ## Finding a road by name
 

@@ -88,6 +88,9 @@ public class NavigationSession : IAsyncDisposable
         return alternatives[0];
     }
 
+    /// <summary>A closure met on the way: a new route round it from here, kept for later reroutes (drawn on Rerouted).</summary>
+    public Task<DirectionsRoute?> AddClosureAsync(RouteClosure closure) => _engine.AddClosureAsync(closure);
+
     /// <summary>Switch to a different computed alternative without re-routing.</summary>
     public void SelectAlternative(int index)
     {

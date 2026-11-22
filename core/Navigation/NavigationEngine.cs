@@ -204,6 +204,24 @@ public sealed class NavigationEngine
     }
 
     /// <summary>
+    /// A closure met on the way (a closed trail, a washed-out road): kept in the options for every later reroute, and
+    /// a new route found at once from where the user is, round it. Null when not navigating, or nothing gets round.
+    /// </summary>
+    public async Task<DirectionsRoute?> AddClosureAsync(RouteClosure closure)
+    {
+        LocationFix? at;
+        lock (_gate)
+        {
+            if (RouteOptions is null || Route is null) return null;
+            RouteOptions = RouteOptions with { Closures = [.. RouteOptions.Closures, closure] };
+            at = Progress?.Location;
+        }
+        if (at is null) return null;
+        _lastRerouteAt = DateTime.MinValue;   // not held back by the last reroute
+        return await RerouteAsync(at.Value).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Plans a new route from <paramref name="from"/> to the destination, with the options the route was planned
     /// with, and follows it. One at a time, and not more often than
     /// <see cref="NavigationOptions.MinimumTimeBetweenReroutes"/>: null when it doesn't run, or finds nothing.

@@ -32,19 +32,22 @@ public static class BidirectionalAStarSolver
         foreach (var n in graph.Nodes)
             nodeMap[n.Id] = n;
 
-        double minF = 0, minB = 0;
-
         while (openF.Count > 0 && openB.Count > 0)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (minF + minB >= bestCost)
+            // Each side's smallest f is a lower bound on any route through what it hasn't expanded (the heuristic is
+            // consistent: straight-line distance at the fastest way's speed), so once either reaches the best route
+            // met, nothing better is left. Their sum isn't one: it counts the distance twice, and stopped the search
+            // before a cheaper route (a trail beside a road) was found.
+            openF.TryPeek(out _, out double minF);
+            openB.TryPeek(out _, out double minB);
+            if (Math.Max(minF, minB) >= bestCost)
                 break;
 
             if (minF <= minB)
             {
-                if (!openF.TryDequeue(out int cur, out minF)) break;
-                if (minF > bestCost) break;
+                if (!openF.TryDequeue(out int cur, out _)) break;
 
                 if (graph.ForwardAdjacency.TryGetValue(cur, out var edges))
                 {
@@ -74,8 +77,7 @@ public static class BidirectionalAStarSolver
             }
             else
             {
-                if (!openB.TryDequeue(out int cur, out minB)) break;
-                if (minB > bestCost) break;
+                if (!openB.TryDequeue(out int cur, out _)) break;
 
                 if (graph.BackwardAdjacency.TryGetValue(cur, out var edges))
                 {

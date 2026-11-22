@@ -1,5 +1,6 @@
 using MaplibreNative.Routing.Core.Models;
 using MaplibreNative.Routing.Core.Routing;
+using MaplibreNative.Routing.Core.Utils;
 
 namespace MaplibreNative.Routing.Core.Navigation;
 
@@ -36,6 +37,7 @@ public sealed class NavigationEngine
     private List<DirectionsRoute> _alternatives = [];
     private DateTime _lastRerouteAt = DateTime.MinValue;
     private bool _arrived;
+    private bool _departed;
     private int _rerouting;
 
     public NavigationEngine(NavigationOptions? options = null, Func<RouteProfile, IRoutingEngine>? engineFor = null)
@@ -43,7 +45,11 @@ public sealed class NavigationEngine
         Options = options ?? new NavigationOptions();
         _engineFor = engineFor ?? RoutingEngines.For;
         _detector = new OffRouteDetector(Options);
+        Distances = new DistanceFormatter(Options.Units);
     }
+
+    /// <summary>Distances in the units navigation speaks them in, for a UI to show alike.</summary>
+    public DistanceFormatter Distances { get; }
 
     public NavigationOptions Options { get; }
 
@@ -64,6 +70,11 @@ public sealed class NavigationEngine
     public event EventHandler<DirectionsRoute>? Rerouted;
     public event EventHandler<RerouteFailedEventArgs>? RerouteFailed;
     public event EventHandler<RouteProgress>? Arrived;
+    /// <summary>
+    /// Something to say: the way to start ("Head southwest on Maple Street"), each turn as it nears ("In 400 feet,
+    /// turn left onto Main Street"), "Route recalculated" after a reroute, and the arrival.
+    /// </summary>
+    public event EventHandler<string>? VoiceInstruction;
 
     /// <summary>Plans up to <paramref name="maxRoutes"/> routes, shortest first, and follows the first.</summary>
     public async Task<IReadOnlyList<DirectionsRoute>> PlanAsync(RouteOptions options, int maxRoutes = 1)
@@ -118,9 +129,14 @@ public sealed class NavigationEngine
         SelectedIndex = index;
         Progress = null;
         _arrived = false;
+        _departed = false;
         _tracker = new RouteProgressTracker(route);
-        _announcer = new ManeuverAnnouncerHelper();
-        _announcer.AnnouncementNeeded += (s, e) => AnnouncementNeeded?.Invoke(this, e);
+        _announcer = new ManeuverAnnouncerHelper(Distances);
+        _announcer.AnnouncementNeeded += (s, e) =>
+        {
+            AnnouncementNeeded?.Invoke(this, e);
+            if (e.Text.Length > 0) VoiceInstruction?.Invoke(this, e.Text);
+        };
         _detector.Reset();
     }
 
@@ -128,13 +144,15 @@ public sealed class NavigationEngine
     public RouteProgress? UpdateLocation(LocationFix fix)
     {
         RouteProgress progress;
-        bool arrivedNow, offRoute;
+        bool arrivedNow, offRoute, departing;
         ManeuverAnnouncerHelper? announcer;
         lock (_gate)
         {
             if (_tracker is null || Route is null) return null;
             progress = _tracker.Update(fix);
             Progress = progress;
+            departing = !_departed;
+            _departed = true;
             announcer = _announcer;
             arrivedNow = progress.HasArrived && !_arrived;
             if (arrivedNow) _arrived = true;
@@ -143,8 +161,14 @@ public sealed class NavigationEngine
         }
 
         ProgressUpdated?.Invoke(this, progress);
+        if (departing && !progress.HasArrived && progress.CurrentLeg.Steps.Count > 0)
+            VoiceInstruction?.Invoke(this, SpokenInstructions.Say(progress.CurrentStep));
         announcer?.Update(progress);
-        if (arrivedNow) Arrived?.Invoke(this, progress);
+        if (arrivedNow)
+        {
+            Arrived?.Invoke(this, progress);
+            VoiceInstruction?.Invoke(this, SpokenInstructions.Arrival);
+        }
         if (offRoute)
         {
             OffRoute?.Invoke(this, new OffRouteEventArgs(fix, progress));
@@ -183,6 +207,7 @@ public sealed class NavigationEngine
                 _detector.Reset((from.Lat, from.Lon));
             }
             Rerouted?.Invoke(this, route);
+            VoiceInstruction?.Invoke(this, SpokenInstructions.Rerouted);
             return route;
         }
         catch (Exception ex)

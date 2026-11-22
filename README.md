@@ -21,7 +21,7 @@ A .NET MAUI navigation and routing plugin for [MapLibre Native](https://github.c
 - **Rerouting** — notices when you leave the route (too far from it, or heading away from the next turn) and plans a new one from where you are
 - **Simulated drives** — drive a route, or any other line, as fake GPS to try navigation and rerouting without going anywhere
 - **Turn-by-turn navigation** — `RouteProgressTracker` snaps GPS to route shape and advances steps
-- **Maneuver announcements** — fires events at 1000 m / 200 m / 30 m thresholds
+- **Spoken instructions** — "In 400 feet, turn left onto Main Street, Route 122A", spoken through the platform's text-to-speech when `session.Voice.IsEnabled` is set; announced about 60, 15 and 4 seconds before each turn (never nearer than 1000, 200 and 30 m), in metric, imperial or UK units
 - **Highway warnings** — detects motorway/trunk segments and surfaces a dismissible warning bar
 - **`NavigationPanel` control** — dark overlay with maneuver icon, instruction, step distance, and ETA
 
@@ -94,6 +94,19 @@ session.StopSimulation();                                                    // 
 
 `RouteSimulator` drives each step at the speed it was timed at. In tests, step it with `Next()` or `All()` and feed
 `NavigationEngine.UpdateLocation` directly.
+
+## Spoken instructions
+
+```csharp
+session.Voice.IsEnabled = true;                                  // MAUI TextToSpeech; Windows speech on WPF
+session.VoiceInstruction += (_, text) => banner.Text = text;      // the same text, to show
+```
+
+Each turn is announced three times as it nears: about 60, 15 and 4 seconds ahead at the speed being driven, but
+never nearer than 1000, 200 and 30 m ("In 0.5 miles, turn left onto Pleasant Street, Route 122", then "In 0.2
+miles…", then "Turn left onto Pleasant Street, Route 122"). Going straight on into a new street name is said once, as
+it's reached. The start ("Head southwest on Maple Street"), a new route and the arrival are said too. Distances
+are rounded as a driver hears them, in the region's units unless `NavigationOptions.Units` says otherwise.
 
 ## Offline MVT routing
 

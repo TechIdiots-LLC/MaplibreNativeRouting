@@ -33,11 +33,15 @@ public class NavigationSession : IAsyncDisposable
     public event EventHandler<DirectionsRoute>? Rerouted;
     public event EventHandler<RerouteFailedEventArgs>? RerouteFailed;
     public event EventHandler<RouteProgress>? Arrived;
+    /// <summary>Each instruction as it's due, for showing (Voice speaks them).</summary>
+    public event EventHandler<string>? VoiceInstruction;
     /// <summary>Each position of a simulated drive, for the app to draw.</summary>
     public event EventHandler<LocationFix>? SimulatedLocationChanged;
     public event EventHandler? SimulationFinished;
 
     public NavigationEngine Engine => _engine;
+    /// <summary>Speaks the instructions once its IsEnabled is set.</summary>
+    public VoiceGuidance Voice { get; }
     public DirectionsRoute? ActiveRoute => _engine.Route;
     public bool IsNavigating => _engine.Route is not null;
     public bool IsSimulating => _simulator is not null;
@@ -48,10 +52,12 @@ public class NavigationSession : IAsyncDisposable
         _overlay = overlay;
         _ui = SynchronizationContext.Current;
         _engine = new NavigationEngine(options);
+        Voice = new VoiceGuidance(_engine);
         _engine.ProgressUpdated += (_, p) => ProgressUpdated?.Invoke(this, p);
         _engine.AnnouncementNeeded += (_, e) => AnnouncementNeeded?.Invoke(this, e);
         _engine.OffRoute += (_, e) => OffRoute?.Invoke(this, e);
         _engine.Arrived += (_, p) => Arrived?.Invoke(this, p);
+        _engine.VoiceInstruction += (_, text) => OnUi(() => VoiceInstruction?.Invoke(this, text));
         _engine.RerouteFailed += (_, e) => OnUi(() => RerouteFailed?.Invoke(this, e));
         _engine.Rerouted += (_, route) => OnUi(() =>
         {
@@ -127,6 +133,7 @@ public class NavigationSession : IAsyncDisposable
     public Task StopAsync()
     {
         StopSimulation();
+        Voice.Stop();
         _engine.Stop();
         _overlay.ClearRoute();
         return Task.CompletedTask;

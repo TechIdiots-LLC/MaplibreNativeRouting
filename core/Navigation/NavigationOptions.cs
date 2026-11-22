@@ -30,6 +30,9 @@ public sealed record NavigationOptions
     /// <summary>The least time between two reroutes (maplibre-navigation-android's SECONDS_BEFORE_REROUTE).</summary>
     public TimeSpan MinimumTimeBetweenReroutes { get; init; } = TimeSpan.FromSeconds(3);
 
+    /// <summary>The units distances are spoken and shown in; by default, the region's.</summary>
+    public Utils.DistanceUnits? Units { get; init; }
+
     /// <summary>How long a reroute may take before it's given up.</summary>
     public TimeSpan RerouteTimeout { get; init; } = TimeSpan.FromSeconds(60);
 }

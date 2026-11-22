@@ -25,12 +25,16 @@ public class NavigationSession : IAsyncDisposable
     public event EventHandler<DirectionsRoute>? Rerouted;
     public event EventHandler<RerouteFailedEventArgs>? RerouteFailed;
     public event EventHandler<RouteProgress>? Arrived;
+    /// <summary>Each instruction as it's due, for showing (Voice speaks them).</summary>
+    public event EventHandler<string>? VoiceInstruction;
     /// <summary>Each position of a simulated drive (the map's own location puck doesn't show them).</summary>
     public event EventHandler<LocationFix>? SimulatedLocationChanged;
     /// <summary>A simulated drive reached its end.</summary>
     public event EventHandler? SimulationFinished;
 
     public NavigationEngine Engine => _engine;
+    /// <summary>Speaks the instructions once its IsEnabled is set.</summary>
+    public VoiceGuidance Voice { get; }
     public DirectionsRoute? ActiveRoute => _engine.Route;
     public IReadOnlyList<DirectionsRoute> RouteAlternatives => _engine.Alternatives;
     public int SelectedRouteIndex => _engine.SelectedIndex;
@@ -42,10 +46,12 @@ public class NavigationSession : IAsyncDisposable
         _dataSource = dataSource;
         _overlay = overlay;
         _engine = new NavigationEngine(options);
+        Voice = new VoiceGuidance(_engine);
         _engine.ProgressUpdated += (_, p) => OnMain(() => ProgressUpdated?.Invoke(this, p));
         _engine.AnnouncementNeeded += (_, e) => OnMain(() => AnnouncementNeeded?.Invoke(this, e));
         _engine.OffRoute += (_, e) => OnMain(() => OffRoute?.Invoke(this, e));
         _engine.Arrived += (_, p) => OnMain(() => Arrived?.Invoke(this, p));
+        _engine.VoiceInstruction += (_, text) => OnMain(() => VoiceInstruction?.Invoke(this, text));
         _engine.RerouteFailed += (_, e) => OnMain(() => RerouteFailed?.Invoke(this, e));
         _engine.Rerouted += (_, route) => OnMain(() =>
         {
@@ -143,6 +149,7 @@ public class NavigationSession : IAsyncDisposable
         _simulator = null;
         sim?.Dispose();
         StopListening();
+        Voice.Stop();
         _engine.Stop();
         _overlay.ClearRoute();
         await Task.CompletedTask;

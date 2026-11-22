@@ -52,6 +52,30 @@ public readonly record struct TileCoord(int Z, int X, int Y)
         return tiles;
     }
 
+    /// <summary>
+    /// The tiles within <paramref name="widthMeters"/> of the line from A to B: a corridor rather than the box round
+    /// it, which on a diagonal trip is about twice the tiles, all of them away from the way.
+    /// </summary>
+    public static List<TileCoord> CoverCorridor(double aLat, double aLon, double bLat, double bLon, double widthMeters, int zoom)
+    {
+        // Metres on a plane at the trip's middle latitude: near enough over a trip's length
+        double kx = Math.Cos((aLat + bLat) / 2 * Math.PI / 180) * 111_320, ky = 110_574;
+        double dLat = widthMeters / ky, dLon = widthMeters / kx;
+        double bx = (bLon - aLon) * kx, by = (bLat - aLat) * ky, len2 = bx * bx + by * by;
+        return CoverBoundingBox(Math.Min(aLat, bLat) - dLat, Math.Min(aLon, bLon) - dLon,
+                Math.Max(aLat, bLat) + dLat, Math.Max(aLon, bLon) + dLon, zoom)
+            .Where(t =>
+            {
+                var (n, s, w, e) = t.GetBounds();
+                double cx = ((w + e) / 2 - aLon) * kx, cy = ((n + s) / 2 - aLat) * ky;
+                double halfDiagonal = Math.Sqrt(Math.Pow((e - w) * kx, 2) + Math.Pow((n - s) * ky, 2)) / 2;
+                double f = len2 > 0 ? Math.Clamp((cx * bx + cy * by) / len2, 0, 1) : 0;
+                double dx = cx - f * bx, dy = cy - f * by;
+                return Math.Sqrt(dx * dx + dy * dy) <= widthMeters + halfDiagonal;
+            })
+            .ToList();
+    }
+
     private static double MercatorYToLat(double yFrac)
     {
         double mercN = Math.PI * (1 - 2 * yFrac);

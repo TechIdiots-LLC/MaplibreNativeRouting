@@ -3,6 +3,8 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
+- The offline routers load the tiles along the trip, not the box round it: those within 30% of the trip's length (at least 5 km) of the straight line from origin to destination (`TileCoord.CoverCorridor`). A 136 km diagonal trip (Vermont to New Hampshire) is 5,547 tiles where the box was 9,016. The width is now in metres east-west too; it was in degrees of latitude, narrower than meant away from the equator
+- Tile download progress is reported about every 2%, not every tile (a long trip reported 9,000 times)
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._

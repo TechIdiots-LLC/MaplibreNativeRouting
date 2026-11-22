@@ -103,9 +103,10 @@ internal sealed class TileProvider : IDisposable
             _ = _cacheProvider.RequestAreaCacheAsync(minLat, minLon, maxLat, maxLon, zoom, ct);
         }
 
-        var tileCoords = TileCoord.CoverBoundingBox(minLat, minLon, maxLat, maxLon, zoom);
+        var tileCoords = TileCoord.CoverCorridor(originLat, originLon, destLat, destLon, expansionKm * 1000, zoom);
         int total = tileCoords.Count;
         int done = 0;
+        int every = Math.Max(1, total / 50);   // progress about every 2%, not every tile
 
         var semaphore = new SemaphoreSlim(MaxConcurrentDownloads);
         var tasks = tileCoords.Select(async coord =>
@@ -115,7 +116,7 @@ internal sealed class TileProvider : IDisposable
             {
                 var data = await GetTileDataAsync(coord, ct).ConfigureAwait(false);
                 int n = Interlocked.Increment(ref done);
-                progress?.Report($"Downloading tiles ({n}/{total})…");
+                if (n % every == 0 || n == total) progress?.Report($"Downloading tiles ({n}/{total})…");
                 return (Coord: coord, Data: data);
             }
             finally

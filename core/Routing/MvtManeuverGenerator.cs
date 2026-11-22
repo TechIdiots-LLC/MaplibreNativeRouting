@@ -7,6 +7,7 @@ namespace MaplibreNative.Routing.Core.Routing;
 internal static class MvtManeuverGenerator
 {
     private static readonly string[] Cardinals = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    private const double TinyStepM = 3;   // a step this short (two pieces nearly meeting) is no maneuver of its own
 
     public static (IReadOnlyList<LegStep> Steps, IReadOnlyList<(double Lon, double Lat)> Shape)
         Generate(List<RoadEdge> edgePath, RoadGraph graph)
@@ -19,7 +20,7 @@ internal static class MvtManeuverGenerator
             nodeMap[n.Id] = n;
 
         var shape = BuildShape(edgePath, nodeMap);
-        var rawSteps = ClassifyEdges(edgePath, nodeMap, shape);
+        var rawSteps = ClassifyEdges(edgePath, nodeMap, shape, graph);
         var merged = MergeSteps(rawSteps);
         var steps = GenerateInstructions(merged, shape);
 
@@ -62,12 +63,22 @@ internal static class MvtManeuverGenerator
         public string RoadClass = "";
         public (double Lon, double Lat) ManeuverLocation;
         public string? TravelMode;
+        /// <summary>Its start is where roads meet: somewhere a driver chooses, not only a bend.</summary>
+        public bool Junction;
+        /// <summary>Of the ways on from its start, it's the straightest: where a road bends at a junction.</summary>
+        public bool Straightest = true;
     }
 
     private static List<RawStep> ClassifyEdges(
         List<RoadEdge> edges, Dictionary<int, GraphNode> nodeMap,
-        List<(double Lon, double Lat)> shape)
+        List<(double Lon, double Lat)> shape, RoadGraph graph)
     {
+        // How many other nodes a node joins: more than two, and it's a junction
+        bool IsJunction(int node) =>
+            graph.ForwardAdjacency[node].Select(e => e.ToNodeId)
+                .Concat(graph.BackwardAdjacency[node].Select(e => e.FromNodeId))
+                .Distinct().Count() > 2;
+
         var steps = new List<RawStep>();
         int shapeIdx = 0;
 
@@ -78,6 +89,7 @@ internal static class MvtManeuverGenerator
             int endIdx = beginIdx + 1 + edge.IntermediatePoints.Count;
 
             ManeuverType type;
+            bool straightest = true;
             if (i == 0)
             {
                 type = ManeuverType.Start;
@@ -114,6 +126,15 @@ internal static class MvtManeuverGenerator
 
                 double angle = RouteUtils.TurnAngle(prevBearing, nextBearing);
                 type = ClassifyTurn(angle);
+                // Another way on that's straighter than this one: here the road turns off it
+                foreach (var other in graph.ForwardAdjacency[edge.FromNodeId])
+                {
+                    if (other.ToNodeId == edge.ToNodeId || other.ToNodeId == prevEdge.FromNodeId) continue;
+                    var to = other.IntermediatePoints.Count > 0 ? other.IntermediatePoints[0]
+                        : (nodeMap[other.ToNodeId].Lon, nodeMap[other.ToNodeId].Lat);
+                    double b = RouteUtils.InitialBearing(curFrom.Lat, curFrom.Lon, to.Lat, to.Lon);
+                    if (Math.Abs(RouteUtils.TurnAngle(prevBearing, b)) < Math.Abs(angle)) straightest = false;
+                }
             }
 
             steps.Add(new RawStep
@@ -129,6 +150,8 @@ internal static class MvtManeuverGenerator
                 RoadClass = edge.RoadClass,
                 ManeuverLocation = shape[beginIdx],
                 TravelMode = edge.RoadClass is "path" ? "pedestrian" : "drive",
+                Junction = i > 0 && IsJunction(edge.FromNodeId),
+                Straightest = straightest,
             });
 
             shapeIdx = endIdx;
@@ -161,10 +184,14 @@ internal static class MvtManeuverGenerator
             var curr = steps[i];
 
             bool sameStreet = string.Equals(prev.StreetName, curr.StreetName, StringComparison.Ordinal)
-                              || (prev.StreetName == null && curr.StreetName == null);
-            bool isContinue = curr.Type == ManeuverType.Continue;
+                              && string.Equals(prev.Ref, curr.Ref, StringComparison.Ordinal);
+            // On the same road, only a real turn where roads meet is a maneuver: a bend with nothing to choose, or
+            // a slight one through a junction, is the road going on; and a step of a metre or two is none at all
+            bool goesOn = curr.Type is ManeuverType.Continue or ManeuverType.SlightLeft or ManeuverType.SlightRight
+                          || !curr.Junction || curr.Straightest;
+            bool tiny = curr.Distance < TinyStepM && i + 1 < steps.Count;
 
-            if (sameStreet && isContinue && prev.Type != ManeuverType.Start)
+            if ((sameStreet && goesOn) || tiny)
             {
                 prev.EndShapeIndex = curr.EndShapeIndex;
                 prev.Distance += curr.Distance;

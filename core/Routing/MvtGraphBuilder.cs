@@ -1,12 +1,15 @@
 using MaplibreNative.Routing.Core.Graph;
 using MaplibreNative.Routing.Core.Models;
 using MaplibreNative.Routing.Core.Mvt;
+using MaplibreNative.Routing.Core.Utils;
 
 namespace MaplibreNative.Routing.Core.Routing;
 
 internal static class MvtGraphBuilder
 {
     private const int RoutingZoom = 14;
+    // A road piece lies along the named line it's part of: the two come from the same ways, drawn a little apart
+    private const double NameToleranceM = 12;
 
     public static async Task<RoadGraph> BuildAsync(
         TileProvider tiles,
@@ -65,8 +68,7 @@ internal static class MvtGraphBuilder
         var transportLayer = mvtTile.GetLayer("transportation");
         if (transportLayer == null) return;
 
-        var nameLayer = mvtTile.GetLayer("transportation_name");
-        var nameLookup = BuildNameLookup(nameLayer, coord);
+        var names = new NameIndex(mvtTile.GetLayer("transportation_name"), coord, NameToleranceM);
 
         foreach (var feature in transportLayer.Features)
         {
@@ -103,7 +105,7 @@ internal static class MvtGraphBuilder
                     coords.Add((lon, lat));
                 }
 
-                string? name = FindStreetName(nameLookup, coords);
+                var named = names.Find(ring, roadClass, transportLayer.Extent);
 
                 segments.Add(new MvtRoadSegment
                 {
@@ -117,63 +119,141 @@ internal static class MvtGraphBuilder
                     Toll = toll,
                     Ramp = ramp,
                     AccessRestricted = access,
-                    Name = name,
+                    Name = named?.Name,
+                    Ref = named?.Ref,
                     FeatureId = feature.Id,
                 });
             }
         }
     }
 
-    private static Dictionary<(double Lon, double Lat), string> BuildNameLookup(
-        MvtLayer? nameLayer, TileCoord coord)
+    /// <summary>
+    /// A tile's named lines (transportation_name), by where they run: OpenMapTiles names roads on lines of their own,
+    /// merged across many of the transportation layer's pieces, so a piece is named by the line it lies along rather
+    /// than by sharing an end with one. Worked in tile units.
+    /// </summary>
+    internal sealed class NameIndex
     {
-        var lookup = new Dictionary<(double, double), string>();
-        if (nameLayer == null) return lookup;
+        private const int Cell = 128;
+        private readonly List<(string? Name, string? Ref, string? Class, List<(int X, int Y)> Points)> _lines = [];
+        private readonly Dictionary<(int, int), List<(int Line, int Seg)>> _grid = [];
+        private readonly double _tolerance;
+        private readonly uint _extent = 4096;
 
-        foreach (var feature in nameLayer.Features)
+        public NameIndex(MvtLayer? layer, TileCoord coord, double toleranceMeters)
         {
-            if (feature.Type != MvtGeomType.LineString) continue;
+            if (layer == null) return;
+            _extent = layer.Extent;
+            var (north, south, _, _) = coord.GetBounds();
+            double metersPerUnit = 40075016.686 * Math.Cos((north + south) / 2 * Math.PI / 180) / ((1 << coord.Z) * (double)layer.Extent);
+            _tolerance = toleranceMeters / metersPerUnit;
 
-            var props = MvtDecoder.GetProperties(feature, nameLayer);
-            string? name = null;
-            if (props.TryGetValue("name", out var n)) name = n.ToString();
-            if (string.IsNullOrEmpty(name) && props.TryGetValue("ref", out var refVal))
-                name = refVal.ToString();
-            if (string.IsNullOrEmpty(name)) continue;
-
-            foreach (var ring in feature.Geometry)
+            foreach (var feature in layer.Features)
             {
-                if (ring.Count == 0) continue;
-                var (fx, fy) = ring[0];
-                var (lat, lon) = coord.FeatureToLatLon(fx, fy, nameLayer.Extent);
-                var key = (Math.Round(lon, 6), Math.Round(lat, 6));
-                lookup.TryAdd(key, name!);
-
-                if (ring.Count > 1)
+                if (feature.Type != MvtGeomType.LineString) continue;
+                var props = MvtDecoder.GetProperties(feature, layer);
+                string? name = props.TryGetValue("name", out var n) && n?.ToString() is { Length: > 0 } ns ? ns : null;
+                string? @ref = RoadNames.FormatRef(props);
+                if (name == null && @ref == null) continue;
+                string? cls = props.TryGetValue("class", out var c) ? c?.ToString() : null;
+                foreach (var ring in feature.Geometry)
                 {
-                    var (fx2, fy2) = ring[^1];
-                    var (lat2, lon2) = coord.FeatureToLatLon(fx2, fy2, nameLayer.Extent);
-                    var key2 = (Math.Round(lon2, 6), Math.Round(lat2, 6));
-                    lookup.TryAdd(key2, name!);
+                    if (ring.Count < 2) continue;
+                    int line = _lines.Count;
+                    _lines.Add((name, @ref, cls, ring));
+                    for (int i = 0; i + 1 < ring.Count; i++)
+                    {
+                        int x0 = Floor(Math.Min(ring[i].X, ring[i + 1].X) - _tolerance), x1 = Floor(Math.Max(ring[i].X, ring[i + 1].X) + _tolerance);
+                        int y0 = Floor(Math.Min(ring[i].Y, ring[i + 1].Y) - _tolerance), y1 = Floor(Math.Max(ring[i].Y, ring[i + 1].Y) + _tolerance);
+                        for (int gx = x0; gx <= x1; gx++)
+                            for (int gy = y0; gy <= y1; gy++)
+                            {
+                                if (!_grid.TryGetValue((gx, gy), out var list)) _grid[(gx, gy)] = list = [];
+                                list.Add((line, i));
+                            }
+                    }
                 }
             }
         }
 
-        return lookup;
-    }
+        private static int Floor(double v) => (int)Math.Floor(v / Cell);
 
-    private static string? FindStreetName(
-        Dictionary<(double Lon, double Lat), string> nameLookup,
-        List<(double Lon, double Lat)> coords)
-    {
-        if (nameLookup.Count == 0 || coords.Count == 0) return null;
+        /// <summary>
+        /// The name and number of the named line a road piece lies along: tried at its middle, then a quarter and
+        /// three quarters along; one of the same class first, when two are as near.
+        /// </summary>
+        /// <param name="piece">The piece, in its own layer's tile units.</param>
+        /// <param name="roadClass">Its class, as the transportation layer gives it.</param>
+        /// <param name="pieceExtent">Its layer's extent.</param>
+        public (string? Name, string? Ref)? Find(List<(int X, int Y)> piece, string roadClass, uint pieceExtent)
+        {
+            if (_lines.Count == 0 || piece.Count < 2) return null;
+            double scale = (double)_extent / pieceExtent;
+            foreach (double at in (ReadOnlySpan<double>)[0.5, 0.25, 0.75])
+            {
+                var (px, py) = Along(piece, at);
+                px *= scale;
+                py *= scale;
+                if (!_grid.TryGetValue((Floor(px), Floor(py)), out var near)) continue;
+                double best = double.MaxValue;
+                int bestLine = -1;
+                var (dx, dy) = Direction(piece, at);
+                foreach (var (line, seg) in near)
+                {
+                    var pts = _lines[line].Points;
+                    double d = SegmentDistance(px, py, pts[seg], pts[seg + 1]);
+                    if (d > _tolerance) continue;
+                    // Running alongside it, not across: at a junction, the crossing street's line is as near
+                    double sx = pts[seg + 1].X - pts[seg].X, sy = pts[seg + 1].Y - pts[seg].Y;
+                    double slen = Math.Sqrt(sx * sx + sy * sy);
+                    if (slen > 0 && Math.Abs(dx * sx + dy * sy) / slen < MinParallel) continue;
+                    // As near, but another class: a bridge over it, or a road beside it
+                    if (_lines[line].Class != roadClass) d += _tolerance / 2;
+                    if (d < best) (best, bestLine) = (d, line);
+                }
+                if (bestLine >= 0) return (_lines[bestLine].Name, _lines[bestLine].Ref);
+            }
+            return null;
+        }
 
-        var startKey = (Math.Round(coords[0].Lon, 6), Math.Round(coords[0].Lat, 6));
-        if (nameLookup.TryGetValue(startKey, out var name)) return name;
+        private const double MinParallel = 0.9;   // cos 25°
 
-        var endKey = (Math.Round(coords[^1].Lon, 6), Math.Round(coords[^1].Lat, 6));
-        if (nameLookup.TryGetValue(endKey, out name)) return name;
+        /// <summary>The unit direction of a piece at a fraction along it.</summary>
+        private static (double X, double Y) Direction(List<(int X, int Y)> pts, double fraction)
+        {
+            var (ax, ay) = Along(pts, Math.Max(0, fraction - 0.02));
+            var (bx, by) = Along(pts, Math.Min(1, fraction + 0.02));
+            double len = Math.Sqrt(Sq(bx - ax) + Sq(by - ay));
+            if (len == 0) { ax = pts[0].X; ay = pts[0].Y; bx = pts[^1].X; by = pts[^1].Y; len = Math.Sqrt(Sq(bx - ax) + Sq(by - ay)); }
+            return len == 0 ? (1, 0) : ((bx - ax) / len, (by - ay) / len);
+        }
 
-        return null;
+        private static (double X, double Y) Along(List<(int X, int Y)> pts, double fraction)
+        {
+            double total = 0;
+            for (int i = 0; i + 1 < pts.Count; i++) total += Math.Sqrt(Sq(pts[i + 1].X - pts[i].X) + Sq(pts[i + 1].Y - pts[i].Y));
+            double want = total * fraction;
+            for (int i = 0; i + 1 < pts.Count; i++)
+            {
+                double len = Math.Sqrt(Sq(pts[i + 1].X - pts[i].X) + Sq(pts[i + 1].Y - pts[i].Y));
+                if (want <= len && len > 0)
+                {
+                    double t = want / len;
+                    return (pts[i].X + (pts[i + 1].X - pts[i].X) * t, pts[i].Y + (pts[i + 1].Y - pts[i].Y) * t);
+                }
+                want -= len;
+            }
+            return (pts[^1].X, pts[^1].Y);
+        }
+
+        private static double SegmentDistance(double px, double py, (int X, int Y) a, (int X, int Y) b)
+        {
+            double dx = b.X - a.X, dy = b.Y - a.Y;
+            double len = dx * dx + dy * dy;
+            double t = len == 0 ? 0 : Math.Clamp(((px - a.X) * dx + (py - a.Y) * dy) / len, 0, 1);
+            return Math.Sqrt(Sq(px - (a.X + dx * t)) + Sq(py - (a.Y + dy * t)));
+        }
+
+        private static double Sq(double v) => v * v;
     }
 }

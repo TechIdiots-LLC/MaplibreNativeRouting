@@ -3,6 +3,7 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
+- `RouteOptions.AvoidRoads` (`RoadTypes` flags): kinds of road not to use at all, for a route planner's road choices: highways, main roads, local roads, service roads, tracks, paths, anything unpaved, ferries. Offline routing leaves out any of them; a Valhalla request highways, unpaved roads and ferries (and tracks by car), which is all Valhalla can leave out. The user's trails are always used
 
 ### 🐞 Bug fixes
 - _...Add new stuff here..._

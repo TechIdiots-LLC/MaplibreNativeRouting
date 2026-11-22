@@ -19,10 +19,12 @@ internal sealed class MvtCostingModel
     private readonly double _useHighways;
     private readonly double _useFerry;
     private readonly double _maxSpeedKmh;
+    private readonly RoadTypes _avoid;
 
-    public MvtCostingModel(RouteProfile profile, double useHighways = 0.1, double useFerry = 0.0)
+    public MvtCostingModel(RouteProfile profile, double useHighways = 0.1, double useFerry = 0.0, RoadTypes avoid = RoadTypes.None)
     {
         _profile = profile;
+        _avoid = avoid;
         _useHighways = Math.Clamp(useHighways, 0, 1);
         _useFerry = Math.Clamp(useFerry, 0, 1);
         // The heuristic's speed: the cheapest way per metre, the speed over the preference of the best class
@@ -53,9 +55,26 @@ internal sealed class MvtCostingModel
 
     public double MaxSpeedMps => _maxSpeedKmh / 3.6;
 
-    public bool IsTraversable(string roadClass, string? subclass, bool accessRestricted)
+    /// <summary>The kind of road a class is, for <see cref="RouteOptions.AvoidRoads"/>; the user's trails are none.</summary>
+    internal static RoadTypes TypeOf(string roadClass) => roadClass switch
+    {
+        "motorway" or "trunk" => RoadTypes.Highways,
+        "primary" or "secondary" => RoadTypes.MainRoads,
+        "tertiary" or "minor" => RoadTypes.LocalRoads,
+        "service" => RoadTypes.ServiceRoads,
+        "track" => RoadTypes.Tracks,
+        "path" => RoadTypes.Paths,
+        "ferry" => RoadTypes.Ferries,
+        _ => RoadTypes.None,
+    };
+
+    public bool IsTraversable(string roadClass, string? subclass, bool accessRestricted, string? surface = null)
     {
         if (accessRestricted) return false;
+        // Left out by the user
+        if ((_avoid & TypeOf(roadClass)) != 0) return false;
+        if ((_avoid & RoadTypes.Unpaved) != 0 && roadClass != TrailClass && surface is not null && UnpavedSurfaces.Contains(surface))
+            return false;
         // OpenMapTiles' roads being built: minor_construction, primary_construction…
         if (roadClass.EndsWith("_construction", StringComparison.Ordinal)) return false;
 

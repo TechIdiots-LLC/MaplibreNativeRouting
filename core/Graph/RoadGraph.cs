@@ -68,7 +68,7 @@ public sealed class RoadGraph
 
         foreach (var seg in segments)
         {
-            if (!costing.IsTraversable(seg.RoadClass, seg.Subclass, seg.AccessRestricted))
+            if (!costing.IsTraversable(seg.RoadClass, seg.Subclass, seg.AccessRestricted, seg.Surface))
                 continue;
 
             var coords = seg.Coordinates;

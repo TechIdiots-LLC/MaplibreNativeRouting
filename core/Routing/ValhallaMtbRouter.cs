@@ -30,9 +30,12 @@ public class ValhallaMtbRouter : IRoutingEngine
 
         var costingOptions = new JsonObject
         {
-            ["use_highways"] = options.HighwaysFor(options.Profile),
-            ["use_ferry"] = options.UseFerry,
+            ["use_highways"] = (options.AvoidRoads & RoadTypes.Highways) != 0 ? 0.0 : options.HighwaysFor(options.Profile),
+            ["use_ferry"] = (options.AvoidRoads & RoadTypes.Ferries) != 0 ? 0.0 : options.UseFerry,
         };
+        // The kinds of road Valhalla can leave out (it has no way to for the others)
+        if ((options.AvoidRoads & RoadTypes.Unpaved) != 0) costingOptions["exclude_unpaved"] = true;
+        if ((options.AvoidRoads & RoadTypes.Tracks) != 0 && costing == "auto") costingOptions["use_tracks"] = 0.0;
         foreach (var kv in options.ValhallaExtras)
             costingOptions[kv.Key] = JsonValue.Create(kv.Value);
 

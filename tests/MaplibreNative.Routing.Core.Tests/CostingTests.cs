@@ -132,4 +132,32 @@ public class CostingTests
         Assert.Equal(0.1, unset.HighwaysFor(RouteProfile.Motorcycle));
         Assert.Equal(0.5, With(0.5).HighwaysFor(RouteProfile.OfflineAuto));
     }
+
+    [Fact]
+    public async Task HighwaysLeftOutAreGoneRoundByTheBackRoad()
+    {
+        var route = await RoutingEngines.For(RouteProfile.OfflineAuto).RouteAsync(new RouteOptions
+        {
+            Origin = P(1000, 2000), Destination = P(3000, 2000), Profile = RouteProfile.OfflineAuto, AvoidRoads = RoadTypes.Highways,
+            MvtTileJsonUrl = "https://tiles.invalid/avoid/{z}/{x}/{y}.pbf", TileCacheProvider = new TrunkWithBackRoad(),
+        });
+        Assert.NotNull(route);
+        Assert.All(route!.Legs[0].Steps.Where(s => s.Distance > 0), s => Assert.Equal("minor", s.RoadClass));
+    }
+
+    [Theory]
+    [InlineData(RoadTypes.Highways, "trunk", null, false)]
+    [InlineData(RoadTypes.Highways, "minor", null, true)]
+    [InlineData(RoadTypes.MainRoads, "secondary", null, false)]
+    [InlineData(RoadTypes.LocalRoads, "minor", null, false)]
+    [InlineData(RoadTypes.ServiceRoads, "service", null, false)]
+    [InlineData(RoadTypes.Tracks, "track", null, false)]
+    [InlineData(RoadTypes.Unpaved, "minor", "unpaved", false)]
+    [InlineData(RoadTypes.Unpaved, "minor", "paved", true)]
+    [InlineData(RoadTypes.Unpaved | RoadTypes.Tracks | RoadTypes.LocalRoads, MvtCostingModel.TrailClass, "unpaved", true)]   // the user's trails always
+    public void TheRoadsLeftOutAreNotUsed(RoadTypes avoid, string roadClass, string? surface, bool usable)
+    {
+        var costing = new MvtCostingModel(RouteProfile.HybridOfflineMotorcycle, avoid: avoid);
+        Assert.Equal(usable, costing.IsTraversable(roadClass, null, false, surface));
+    }
 }

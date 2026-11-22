@@ -43,6 +43,13 @@ public record RouteOptions
         _ => 0.1,
     };
 
+    /// <summary>
+    /// Kinds of road not to use at all, beyond those the profile leaves out (a car takes no tracks, hybrid moto no
+    /// footpaths). Offline, any of them; in a Valhalla request, highways, unpaved roads and ferries (Valhalla has no
+    /// way to leave out the others). The user's trails are always used.
+    /// </summary>
+    public RoadTypes AvoidRoads { get; init; } = RoadTypes.None;
+
     /// <summary>Avoid ferry routes.</summary>
     public double UseFerry { get; init; } = 0.0;
 

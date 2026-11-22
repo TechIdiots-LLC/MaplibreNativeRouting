@@ -22,8 +22,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MapLibreNative.Maui.Handlers" Version="4.1.0-dev2" />
-    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+    <PackageReference Include="MapLibreNative.Maui.Handlers" Version="5.0.0-pre.4" />
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
   </ItemGroup>
 

@@ -3,6 +3,12 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
+
+### 🐞 Bug fixes
+- _...Add new stuff here..._
+
+## 0.1.0
+### ✨ Features and improvements
 - Hybrid offline routing is trails and roads together: `HybridGraphRouter` routes `HybridOfflineMotorcycle` and `HybridOfflineBicycle` over the user's trails and the map's roads as one network, so a route goes trail, rural road, trail as needed, and reaches the trails by road from a start off them. A trail's end within 50 m of a road or trail is joined to it, and a trail crossing a road at grade meets it. The hybrid profiles have their own costing at last (before, every road, motorways included, cost 30 km/h): trails preferred, minor roads twice their time, bigger ones three and four times, motorways and footpaths closed. A destination on a trail nothing joins is reached as near as the network goes. On real tiles, a route from Holden centre to a trail now starts at the origin and takes roads to it; before, it began 2.1 km away on the trail
 - Closures: `RouteOptions.Closures` (a place and a radius) are left out of every route, trails and roads alike, cut exactly at their edge; `AddClosureAsync` on the engine and sessions adds one on the way and reroutes round it at once, keeping it for later reroutes. Offline profiles, `TrackOnly` and Valhalla (as excluded polygons) honour them. On real tiles, a trail closed in its middle is left for 356 m of road and rejoined
 - Stops on the way: `RouteOptions.Waypoints`, routed leg by leg with any engine (`MultiStopRouting`) into one route of several legs. `NavigationEngine` raises `WaypointReached` and says "You have reached stop 1" as each is reached, and a reroute keeps only the stops still ahead. `RouteWaypoints` edits the points as a user plans, ported from maplibre-gl-directions: origin and destination at the ends, a stop added where it lengthens the trip least, a point put on the route inserted between the stops of its leg, a point tapped to remove it. MAUI's `RouteOverlay.ShowWaypoints` draws them (A, numbered stops, B), and `MapTapTolerance.Meters` turns a finger's width into metres at the map's zoom for matching taps
@@ -18,7 +24,6 @@
 - `RoadNames`: road names as people say them, shared with AirScribe's road matching. `Words` spells abbreviations out ("Elm St." is "elm street"), `RefNames` gives the ways a number is said ("MA 9" is Route 9, State Route 9, Highway 9), `Base` drops a name's kind and directions ("North Elm Street" is Elm), `Distance` measures a mishearing, `FormatRef` writes an OpenMapTiles ref
 
 ### 🐞 Bug fixes
-- _...Add new stuff here..._
 - The online hybrid profiles (`HybridMotorcycle`, `HybridBicycle`) take the road to the trail when the start or end is off it, and the road all the way when the trails don't connect the two: a route could begin kilometres from the origin, at the trail, or end at the first trail's entrance far short of the destination
 - The MVT tile source is kept per TileJSON URL (a second source got the first one's tiles), and a `{z}/{x}/{y}` template is accepted in place of a TileJSON
 - Roads under construction (`*_construction` classes) aren't routed on

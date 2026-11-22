@@ -3,8 +3,9 @@
 ## master
 ### ✨ Features and improvements
 - _...Add new stuff here..._
-- Offline MVT routes name every step: a road piece takes the name and number of the OpenMapTiles `transportation_name` line it runs alongside (within 12 m, the same class first, not one crossing it), rather than only one sharing an end with it, which few did. Road numbers are written as their network has them (`MA 31`, `I 190`, `US 20`) from the tiles' bare `ref`, so a step reads "Holden Road / MA 31". On a real Holden→Paxton route, 46 of 49 steps were named where none were
+- Offline MVT routes name every step: a road piece takes the name and number of the OpenMapTiles `transportation_name` line it runs alongside (within 12 m, the same class first, not one crossing it), rather than only one sharing an end with it, which few did. Road numbers are written as their network has them (`MA 31`, `I 190`, `US 20`) from the tiles' bare `ref`, so a step reads "Holden Road / MA 31". On a real Holden→Paxton route, 12 of its 15 steps are named, where 2 of 42 were
 - Offline MVT routes give fewer, truer steps: on the same road, a bend where no other road meets, a slight bend through a junction, or a bend where the road is still the straightest way on is no maneuver; a step of a few metres folds into the one before. The Holden→Paxton route went from 49 steps, most "Bear left/right" along one street, to 15
+- `RoadSearch.FindAsync(query, lat, lon, radiusKm)`: a road, or the corner of two, by name near a place, from the same OpenMapTiles tiles the offline router uses: "Elm St", "Route 31" (one road, MA 31, whatever each town calls it), "Main St and Route 31" (where they meet), a misheard "Pheasant St" (Pleasant Street); nearest first, with a `Location` to route to
 - `RoadNames`: road names as people say them, shared with AirScribe's road matching. `Words` spells abbreviations out ("Elm St." is "elm street"), `RefNames` gives the ways a number is said ("MA 9" is Route 9, State Route 9, Highway 9), `Base` drops a name's kind and directions ("North Elm Street" is Elm), `Distance` measures a mishearing, `FormatRef` writes an OpenMapTiles ref
 
 ### 🐞 Bug fixes

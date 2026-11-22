@@ -17,6 +17,7 @@ A .NET MAUI navigation and routing plugin for [MapLibre Native](https://github.c
 - **Track-graph routing** — offline A\* pathfinding over imported GeoJSON/GPX track layers
 - **Hybrid routing** — automatically stitches road segments with trail A\* segments (Valhalla or MVT road engine)
 - **Shared tile cache** — optional `ITileCacheProvider` lets the routing plugin share tiles with the host app's map renderer cache
+- **Road search by name** — `RoadSearch` finds a road or a corner near a place from the same tiles: "Elm St", "Route 9", "Main St and Route 9", or a misheard "Pheasant St" for Pleasant Street
 - **Turn-by-turn navigation** — `RouteProgressTracker` snaps GPS to route shape and advances steps
 - **Maneuver announcements** — fires events at 1000 m / 200 m / 30 m thresholds
 - **Highway warnings** — detects motorway/trunk segments and surfaces a dismissible warning bar
@@ -78,6 +79,32 @@ await session.StartAsync(new RouteOptions
 ```
 
 Hybrid offline profiles (`HybridOfflineMotorcycle`, `HybridOfflineBicycle`) route primarily on GeoJSON trail features and use MVT roads to fill gaps between trail segments.
+
+## Finding a road by name
+
+`RoadSearch` reads the same OpenMapTiles tiles (`transportation_name` at zoom 14) to find roads by name near a
+place, for a destination typed or spoken:
+
+```csharp
+var search = new RoadSearch("https://your-tileserver/data/openmaptiles.json");
+var found = await search.FindAsync("Main St and Route 31", lat, lon, radiusKm: 10);
+// found[0]: "Main Street and MA 31 (Highland Street)", IsCorner, Location = where they meet
+await session.StartAsync(new RouteOptions
+{
+    Origin = (lat, lon), Destination = found[0].Location, Profile = RouteProfile.OfflineAuto,
+    MvtTileJsonUrl = "https://your-tileserver/data/openmaptiles.json",
+});
+```
+
+- **Names however they're written**: "Elm St." is Elm Street; "Highland" alone finds Highland Street (`Level = Base`).
+- **Road numbers however they're said**: "Route 31", "Rt 31", "State Route 31" and "MA 31" all find the road numbered
+  MA 31, as one road whatever each town calls its stretch; "I-190" and "Interstate 190" find I 190.
+- **Corners**: two roads joined by "and", "at" or "&" give the point where they meet first, then each road.
+- **Misheard names**: "Pheasant Street" finds Pleasant Street (`Level = Fuzzy`) when no road is called that.
+- **Nearest first**: a road is the stretches of its name that join, so Main Street here and in the next town are two
+  results; `Location` is the road's point nearest the search's centre.
+
+The rules are in `RoadNames`, public for an app's own matching. They're shared with AirScribe's road matching.
 
 ## Shared tile cache
 
